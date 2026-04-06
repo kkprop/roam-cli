@@ -98,20 +98,43 @@
    "drafts"          "List saved drafts"
    "publish"         "Publish draft(s) to Roam"})
 
+;; Commands that don't take a graph arg
+(def ^:private no-graph-cmds #{"setup" "graphs"})
+
+(defn- maybe-prepend-default-graph
+  "If command needs a graph and none given, prepend the default/sole graph."
+  [cmd cmd-args]
+  (if (no-graph-cmds cmd)
+    cmd-args
+    (if-let [dg (setup/default-graph)]
+      (if (empty? cmd-args)
+        ;; No args at all — prepend default graph
+        [dg]
+        ;; Has args — check if first arg is a known graph key
+        (if (get (:roam-graphs (setup/load-config)) (keyword (str/replace (first cmd-args) ":" "")))
+          cmd-args
+          (into [dg] cmd-args)))
+      cmd-args)))
+
 (defn -main [& args]
-  (let [cmd (first args)
-        cmd-args (vec (rest args))]
-    (cond
-      (or (= cmd "--version") (= cmd "-v"))
-      (println (str "roam-cli " version))
+  (try
+    (let [cmd (first args)
+          raw-args (vec (rest args))
+          cmd-args (if (get tasks cmd) (maybe-prepend-default-graph cmd raw-args) raw-args)]
+      (cond
+        (or (= cmd "--version") (= cmd "-v"))
+        (println (str "roam-cli " version))
 
-      (get tasks cmd)
-      ((get tasks cmd) cmd-args)
+        (get tasks cmd)
+        ((get tasks cmd) cmd-args)
 
-      :else
-      (do (println (str "roam-cli " version))
-          (println "\nUsage: roam-cli <command> [args]\n")
-          (doseq [t (sort (keys tasks))]
-            (println (format "  %-17s %s" t (get docs t ""))))
-          (when cmd (println (str "\nUnknown command: " cmd)))
-          (System/exit (if cmd 1 0))))))
+        :else
+        (do (println (str "roam-cli " version))
+            (println "\nUsage: roam-cli <command> [args]\n")
+            (doseq [t (sort (keys tasks))]
+              (println (format "  %-17s %s" t (get docs t ""))))
+            (when cmd (println (str "\nUnknown command: " cmd)))
+            (System/exit (if cmd 1 0)))))
+    (catch Exception e
+      (println (str "Error: " (.getMessage e)))
+      (System/exit 1))))

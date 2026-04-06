@@ -53,24 +53,26 @@
   (println (str "✅ Saved to " path)))
 
 (defn setup-wizard
-  "Interactive setup. Prompts for graph name + token, validates, writes config."
+  "Interactive setup. Prompts for graph name, alias, token. Validates, writes config."
   []
   (println "No config found. Let's set up your Roam connection.\n")
   (if-let [graph (prompt "Graph name (from your Roam URL): ")]
-    (if-let [token (prompt "API token (from Roam Settings > Graph > API Tokens): ")]
-      (do
-        (print "Testing connection... ")
-        (flush)
-        (if-let [pages (test-token graph token)]
-          (let [key (keyword (str/replace graph #"[^a-zA-Z0-9_-]" "-"))
-                path (default-config-path)
-                cfg {:roam-graphs {key {:token token :graph graph}}
-                     :default-graph key}]
-            (save-config path cfg)
-            (println (str "✅ Connected to " graph " (" pages " pages)"))
-            (println (str "\nTry: roam read " (name key) " \"some page\"")))
-          (println "❌ Connection failed. Check your graph name and token.")))
-      (println "Aborted — no token provided."))
+    (let [default-alias (str/replace graph #"[^a-zA-Z0-9]" "")
+          alias (or (prompt (str "Short alias [" default-alias "]: ")) default-alias)]
+      (if-let [token (prompt "API token (from Roam Settings > Graph > API Tokens): ")]
+        (do
+          (print "Testing connection... ")
+          (flush)
+          (if-let [pages (test-token graph token)]
+            (let [key (keyword alias)
+                  path (default-config-path)
+                  cfg {:roam-graphs {key {:token token :graph graph}}
+                       :default-graph key}]
+              (save-config path cfg)
+              (println (str "✅ Connected to " graph " (" pages " pages)"))
+              (println (str "\nTry: roam-cli read " alias " \"some page\"")))
+            (println "❌ Connection failed. Check your graph name and token.")))
+        (println "Aborted — no token provided.")))
     (println "Aborted — no graph name provided.")))
 
 (defn add-graph
@@ -80,18 +82,19 @@
     (do
       (println (str "Adding a new graph" (when key-hint (str " ('" key-hint "' not found)")) ".\n"))
       (if-let [graph (prompt (str "Graph name" (when key-hint (str " [" key-hint "]")) ": "))]
-        (if-let [token (prompt "API token: ")]
-          (do
-            (print "Testing connection... ")
-            (flush)
-            (if-let [pages (test-token graph token)]
-              (let [key (keyword (or key-hint (str/replace graph #"[^a-zA-Z0-9_-]" "-")))
-                    path (detect-config)
-                    updated (assoc-in cfg [:roam-graphs key] {:token token :graph graph})]
-                (save-config path updated)
-                (println (str "✅ Connected to " graph " (" pages " pages)")))
-              (println "❌ Connection failed.")))
-          (println "Aborted."))
+        (let [alias (or key-hint (prompt (str "Short alias [" graph "]: ")) graph)]
+          (if-let [token (prompt "API token: ")]
+            (do
+              (print "Testing connection... ")
+              (flush)
+              (if-let [pages (test-token graph token)]
+                (let [key (keyword alias)
+                      path (detect-config)
+                      updated (assoc-in cfg [:roam-graphs key] {:token token :graph graph})]
+                  (save-config path updated)
+                  (println (str "✅ Connected to " graph " (" pages " pages)")))
+                (println "❌ Connection failed.")))
+            (println "Aborted.")))
         (println "Aborted.")))
     (setup-wizard)))
 
@@ -122,3 +125,13 @@
   (if (detect-config)
     true
     (do (setup-wizard) (some? (detect-config)))))
+
+(defn default-graph
+  "Return the default graph key name as string, or nil.
+   If only one graph configured, return that. Otherwise return :default-graph."
+  []
+  (when-let [cfg (load-config)]
+    (let [graphs (:roam-graphs cfg)]
+      (name (if (= 1 (count graphs))
+              (ffirst graphs)
+              (or (:default-graph cfg) (ffirst graphs)))))))

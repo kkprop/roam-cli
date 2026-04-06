@@ -9,22 +9,31 @@
 (def base-url "https://api.roamresearch.com/api/graph")
 
 (defn load-config []
-  (let [home (System/getProperty "user.home")
-        primary (str home "/.roam-cli/config.edn")
-        legacy  (str home "/roam-cli/config.edn")
-        path (cond (.exists (java.io.File. primary)) primary
-                   (.exists (java.io.File. legacy))  legacy)]
-    (if path
-      (edn/read-string (slurp path))
-      (do (println "No config found. Run: roam-cli setup")
-          (System/exit 1)))))
+  (try
+    (let [home (System/getProperty "user.home")
+          primary (str home "/.roam-cli/config.edn")
+          legacy  (str home "/roam-cli/config.edn")
+          path (cond (.exists (java.io.File. primary)) primary
+                     (.exists (java.io.File. legacy))  legacy)]
+      (when path (edn/read-string (slurp path))))
+    (catch Exception _ nil)))
 
 (defn get-graph-config [graph-key]
-  (let [cfg (load-config)
-        k (cond (keyword? graph-key) graph-key
-                (string? graph-key) (-> graph-key (str/replace ":" "") keyword)
-                :else graph-key)]
-    (get-in cfg [:roam-graphs (or k (:default-graph cfg))])))
+  (let [cfg (or (load-config)
+                (do (require 'roam.setup)
+                    ((resolve 'roam.setup/setup-wizard))
+                    (load-config)))]
+    (when-not cfg
+      (println "No config found. Run: roam-cli setup")
+      (System/exit 1))
+    (let [k (cond (keyword? graph-key) graph-key
+                  (string? graph-key) (-> graph-key (str/replace ":" "") keyword)
+                  :else graph-key)
+          gc (get-in cfg [:roam-graphs (or k (:default-graph cfg))])]
+      (when-not gc
+        (println (str "Graph '" (name (or k graph-key)) "' not found. Run: roam-cli graphs"))
+        (System/exit 1))
+      gc)))
 
 ;; --- Rate tracker ---
 
@@ -49,27 +58,30 @@
   "Make authenticated Roam API request with 429 exponential backoff.
    method: :post/:get, endpoint: q/pull/pull-many/write, data: request body map."
   [method endpoint graph-key data]
-  (let [{:keys [token graph]} (get-graph-config graph-key)
-        url (str base-url "/" graph "/" endpoint)
-        headers {"X-Authorization" (str "Bearer " token)
-                 "Content-Type" "application/json"
-                 "Accept" "application/json"}]
-    (loop [attempt 1]
-      (track-call!)
-      (let [resp (case method
-                   :post (http/post url {:headers headers
-                                         :body (json/generate-string data)
-                                         :throw false})
-                   :get  (http/get url {:headers headers :throw false}))]
-        (if (= 429 (:status resp))
-          (if (<= attempt 5)
-            (let [delay-ms (if (<= attempt 3) (* attempt 2000) (* attempt 15000))]
-              (binding [*out* *err*]
-                (println "⏳ 429 retry in" (/ delay-ms 1000) "s (attempt" (str attempt "/5)")))
-              (Thread/sleep delay-ms)
-              (recur (inc attempt)))
-            resp)
-          resp)))))
+  (try
+    (let [{:keys [token graph]} (get-graph-config graph-key)
+          url (str base-url "/" graph "/" endpoint)
+          headers {"X-Authorization" (str "Bearer " token)
+                   "Content-Type" "application/json"
+                   "Accept" "application/json"}]
+      (loop [attempt 1]
+        (track-call!)
+        (let [resp (case method
+                     :post (http/post url {:headers headers
+                                           :body (json/generate-string data)
+                                           :throw false})
+                     :get  (http/get url {:headers headers :throw false}))]
+          (if (= 429 (:status resp))
+            (if (<= attempt 5)
+              (let [delay-ms (if (<= attempt 3) (* attempt 2000) (* attempt 15000))]
+                (binding [*out* *err*]
+                  (println "⏳ 429 retry in" (/ delay-ms 1000) "s (attempt" (str attempt "/5)")))
+                (Thread/sleep delay-ms)
+                (recur (inc attempt)))
+              resp)
+            resp))))
+    (catch Exception e
+      {:status 0 :body (str "Network error: " (.getMessage e))})))
 
 (defn parse-response
   "Parse JSON response body, fixing Roam's colon-prefixed keys."
@@ -133,8 +145,8 @@
     (str month " " day suffix ", " year)))
 
 (defn test-connection [graph-key]
-  (let [{:keys [token graph]} (get-graph-config graph-key)]
-    (println "Testing" graph-key "→" graph)
+  (let [gc (get-graph-config graph-key)]
+    (println "Testing" graph-key "→" (:graph gc))
     (let [resp (request :post "q" graph-key
                         {:query "[:find ?uid :where [?b :block/uid ?uid]]" :args []})]
       (if (= 200 (:status resp))
