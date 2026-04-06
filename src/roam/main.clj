@@ -30,6 +30,8 @@
                                             (println "Usage: roam read <graph> <page-or-uid>")))
    "pull"            (fn [[g uid]]      (if (and g uid) (read/pull-cli g uid)
                                             (println "Usage: roam pull <graph> <uid>")))
+   "pull-shallow"    (fn [[g uid]]      (if (and g uid) (read/pull-shallow-cli g uid)
+                                            (println "Usage: roam pull-shallow <graph> <uid>")))
    "daily"           (fn [[g]]          (if g (read/daily-cli g)
                                             (println "Usage: roam daily <graph>")))
    "context"         (fn [[g uid]]      (if (and g uid) (read/context-cli g uid)
@@ -45,14 +47,25 @@
                                             (println "Usage: roam update <graph> <uid> <content>")))
    "move"            (fn [[g uid p & [o]]] (if (and g uid p) (write/move-cli g uid p o)
                                             (println "Usage: roam move <graph> <block-uid> <new-parent-uid> [order]")))
+   "write-before"    (fn [[g uid & c]]  (if (and g uid (seq c)) (write/write-before-cli g uid (str/join " " c))
+                                            (println "Usage: roam write-before <graph> <sibling-uid> <content>")))
+   "write-after"     (fn [[g uid & c]]  (if (and g uid (seq c)) (write/write-after-cli g uid (str/join " " c))
+                                            (println "Usage: roam write-after <graph> <sibling-uid> <content>")))
    "test-connection" (fn [[g]]          (if g (protocol/test-connection g)
-                                            (println "Usage: roam test-connection <graph>")))
+                                            (println "Usage: roam-cli test-connection <graph>")))
+   "after"           (fn [[g id d]]     (if (and g id d) (read/after-cli g id d)
+                                            (println "Usage: roam-cli after <graph> <uid-or-page> <date>")))
+   "range"           (fn [[g id s e]]   (if (and g id s e) (read/range-cli g id s e)
+                                            (println "Usage: roam-cli range <graph> <uid-or-page> <start> <end>")))
+   "today"           (fn [[g]]          (if g (read/today-cli g)
+                                            (println "Usage: roam-cli today <graph>")))
    "setup"           setup/setup-cli
    "graphs"          setup/graphs-cli})
 
 (def docs
   {"read"            "Read page or block"
    "pull"            "Deep pull block with nested children"
+   "pull-shallow"    "First-level children overview with UIDs"
    "daily"           "Show today's daily page"
    "context"         "Show block with ancestor chain"
    "query"           "Raw Datalog query"
@@ -61,7 +74,12 @@
    "write"           "Write content (--titled, --tree, --to)"
    "update"          "Update existing block"
    "move"            "Move block to new parent"
+   "write-before"    "Insert block before sibling"
+   "write-after"     "Insert block after sibling"
    "test-connection" "Verify graph API connection"
+   "after"           "Blocks created/edited after date"
+   "range"           "Blocks created/edited in date range"
+   "today"           "All blocks created/edited today"
    "setup"           "Interactive config wizard"
    "graphs"          "List configured graphs"})
 

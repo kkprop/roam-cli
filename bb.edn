@@ -27,6 +27,12 @@
                   (read/pull-cli g uid)
                   (println "Usage: bb pull <graph> <uid>")))}
 
+  pull-shallow {:doc "Shallow pull — first-level children with UIDs: <graph> <uid>"
+                :task (let [[g uid] *command-line-args*]
+                        (if (and g uid)
+                          (read/pull-shallow-cli g uid)
+                          (println "Usage: bb pull-shallow <graph> <uid>")))}
+
   ;; Write
   write {:doc "Write: <graph> [--titled T] [--tree] [--to uid] <content-or-file>"
          :task (let [[g & args] *command-line-args*]
@@ -57,6 +63,18 @@
                 (if (and g uid parent)
                   (write/move-cli g uid parent order)
                   (println "Usage: bb move <graph> <block-uid> <new-parent-uid> [order]")))}
+
+  write-before {:doc "Insert block before sibling: <graph> <sibling-uid> <content>"
+                :task (let [[g uid & content] *command-line-args*]
+                        (if (and g uid (seq content))
+                          (write/write-before-cli g uid (str/join " " content))
+                          (println "Usage: bb write-before <graph> <sibling-uid> \"content\"")))}
+
+  write-after {:doc "Insert block after sibling: <graph> <sibling-uid> <content>"
+               :task (let [[g uid & content] *command-line-args*]
+                       (if (and g uid (seq content))
+                         (write/write-after-cli g uid (str/join " " content))
+                         (println "Usage: bb write-after <graph> <sibling-uid> \"content\"")))}
 
   ;; Search
   search {:doc "Search blocks: <graph> <term>"
@@ -95,6 +113,24 @@
                    (if (and g uid)
                      (read/context-cli g uid)
                      (println "Usage: bb context <graph> <uid>")))}
+
+  after {:doc "Blocks created/edited after date: <graph> <uid-or-page> <date>"
+         :task (let [[g id d] *command-line-args*]
+                 (if (and g id d)
+                   (read/after-cli g id d)
+                   (println "Usage: bb after <graph> <uid-or-page> <yyyy-MM-dd>")))}
+
+  range {:doc "Blocks in date range: <graph> <uid-or-page> <start> <end>"
+         :task (let [[g id s e] *command-line-args*]
+                 (if (and g id s e)
+                   (read/range-cli g id s e)
+                   (println "Usage: bb range <graph> <uid-or-page> <start> <end>")))}
+
+  today {:doc "All blocks created/edited today: <graph>"
+         :task (let [[g] *command-line-args*]
+                 (if g
+                   (read/today-cli g)
+                   (println "Usage: bb today <graph>")))}
 
   build {:doc "Build standalone binary → dist/roam-cli"
          :requires ([babashka.fs :as bfs] [babashka.process :as bp] [clojure.string :as bstr])

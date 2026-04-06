@@ -123,6 +123,29 @@
           (write-children parent blocks)
           {:success true :blocks-written total})))))
 
+;; ── Positional insert ─────────────────────────────────────────────────────────
+
+(defn- find-sibling-position
+  "Query parent UID and block order for a sibling. Returns [parent-uid order] or nil."
+  [graph-key sibling-uid]
+  (let [q "[:find ?puid ?order :in $ ?cuid :where [?c :block/uid ?cuid] [?p :block/children ?c] [?p :block/uid ?puid] [?c :block/order ?order]]"
+        result (roam/q graph-key q [sibling-uid])]
+    (first (:result result))))
+
+(defn write-before
+  "Insert block before sibling (same order index = before)."
+  [graph-key sibling-uid content]
+  (if-let [[parent-uid order] (find-sibling-position graph-key sibling-uid)]
+    (create-block graph-key parent-uid content :order order)
+    {:error "Could not find parent of sibling block"}))
+
+(defn write-after
+  "Insert block after sibling (order + 1)."
+  [graph-key sibling-uid content]
+  (if-let [[parent-uid order] (find-sibling-position graph-key sibling-uid)]
+    (create-block graph-key parent-uid content :order (inc order))
+    {:error "Could not find parent of sibling block"}))
+
 ;; ── Smart entry point ────────────────────────────────────────────────────────
 
 (defn write
@@ -170,3 +193,15 @@
     (if (:error result)
       (println "❌" (:error result))
       (println "✅ Block" (->uid uid) "moved to" (->uid new-parent-uid)))))
+
+(defn write-before-cli [graph-key sibling-uid content]
+  (let [result (write-before (->key graph-key) (->uid sibling-uid) content)]
+    (if (:error result)
+      (println "❌" (:error result))
+      (println "✅ Written before" (->uid sibling-uid)))))
+
+(defn write-after-cli [graph-key sibling-uid content]
+  (let [result (write-after (->key graph-key) (->uid sibling-uid) content)]
+    (if (:error result)
+      (println "❌" (:error result))
+      (println "✅ Written after" (->uid sibling-uid)))))
