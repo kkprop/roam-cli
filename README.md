@@ -2,18 +2,39 @@
 
 CLI for Roam Research graphs. Read, write, search, and query from the terminal.
 
-## Requirements
+## Install
 
-- [Babashka](https://github.com/babashka/babashka) >= 1.3.177
-- Roam Research API token ([generate here](https://roamresearch.com/#/app/developer))
+### Download binary (macOS arm64)
+
+```bash
+curl -L https://github.com/kkprop/roam-cli/releases/latest/download/roam-macos-arm64.tar.gz | tar xz
+mv roam /usr/local/bin/
+roam --version
+```
+
+### Build from source
+
+```bash
+git clone https://github.com/kkprop/roam-cli.git ~/roam-cli
+cd ~/roam-cli
+bb build
+./dist/roam --version
+```
+
+Requires [Babashka](https://github.com/babashka/babashka) >= 1.3.177.
 
 ## Setup
 
+First run will prompt you to configure a graph:
+
 ```bash
-git clone <repo> ~/roam-cli && cd ~/roam-cli
+bb setup
+# Graph name (from your Roam URL): my-graph
+# API token (from Roam Settings > API Tokens): roam-graph-token-...
+# ✅ Connected to my-graph (42 pages)
 ```
 
-Create `config.edn`:
+Or create `~/.roam-cli/config.edn` manually:
 
 ```edn
 {:roam-graphs
@@ -22,11 +43,13 @@ Create `config.edn`:
  :default-graph :personal}
 ```
 
-Test it:
-
 ```bash
 bb test-connection personal
 # ✅ Connected
+
+bb graphs
+# * personal → my-graph
+#   work → work-graph
 ```
 
 ## Commands
@@ -50,20 +73,10 @@ bb daily lisp                             # Today's daily note
 bb context lisp DNiwQCo34                 # Ancestor path → target block
 ```
 
-Context output shows the path from root to block:
-
-```
-↳ Rate Limit Test
-  ↳ Level 2
-    ↳ Level 3
-      ↳ Level 4
-        - Level 4 content.
-```
-
 ### Write
 
 ```bash
-bb write <graph> "content"                    # Auto-detect mode, write to daily
+bb write <graph> "content"                    # Flat block on daily page
 bb write <graph> --to <uid> "content"         # Write under specific parent
 bb write <graph> --titled "Title" "content"   # Title block + content as child
 bb write <graph> --tree file.md               # Parse markdown → nested blocks
@@ -76,20 +89,9 @@ Write modes:
 | Flag | Behavior |
 |---|---|
 | _(default)_ | Auto-detect: `--tree` if markdown headers found, else flat |
-| `--flat` | Single block |
 | `--titled "T"` | Title block + content as child (UID capture) |
 | `--tree` | Parse markdown into nested block hierarchy |
 | `--to <uid>` | Write under specific parent instead of daily page |
-
-Examples:
-
-```bash
-bb write lisp "quick note"                          # Flat block on daily page
-bb write lisp --titled "Meeting Notes" notes.md     # Title + file as child
-bb write lisp --tree design.md                      # Markdown → block tree
-bb write lisp --to abc123uid "child block"          # Under specific parent
-bb update lisp abc123uid "corrected text"           # Edit existing block
-```
 
 ### Search
 
@@ -98,41 +100,24 @@ bb search <graph> <term>            # Search block content (fuzzy)
 bb pages <graph> <term>             # Search page titles (fuzzy)
 ```
 
-Examples:
-
-```bash
-bb search lisp "REPL"
-# 🔗 abc123 — REPL-driven development is the key...
-# 🔗 def456 — Open a REPL and try this...
-
-bb pages lisp "dev"
-# 📄 REPL-driven development
-# 📄 dev-websocket
-```
-
 ### Query
 
 ```bash
-bb query <graph> '<datalog>'        # Raw Datalog query, tabular output
-```
-
-Examples:
-
-```bash
-bb query lisp '[:find ?title :where [?p :node/title ?title]]'
-
-bb query lisp '[:find ?uid ?s :in $ ?t :where [?b :block/uid ?uid] [?b :block/string ?s] [(clojure.string/includes? ?s ?t)]]' 
+bb query <graph> '<datalog>'        # Raw Datalog query
 ```
 
 ### Utility
 
 ```bash
+bb setup                            # Interactive config wizard
+bb graphs                           # List configured graphs
 bb test-connection <graph>          # Verify API token and graph access
+bb build                            # Build standalone binary → dist/roam
 ```
 
 ## Config
 
-`~/roam-cli/config.edn` — map of named graphs with API tokens:
+`~/.roam-cli/config.edn` (primary) or `~/roam-cli/config.edn` (legacy):
 
 ```edn
 {:roam-graphs
@@ -141,8 +126,8 @@ bb test-connection <graph>          # Verify API token and graph access
  :default-graph :personal}
 ```
 
-- `:graph` is the graph name from your Roam URL (`roamresearch.com/#/app/<graph-name>`)
-- `:token` is a Graph API token from Roam's developer settings
+- `:graph` — graph name from your Roam URL (`roamresearch.com/#/app/<graph-name>`)
+- `:token` — Graph API token from Roam Settings → API Tokens
 - Use the key name (`:personal`, `:work`) as `<graph>` in all commands
 
 ## Architecture
@@ -159,17 +144,10 @@ src/roam/
 │   ├── write.clj      # create, update, move, write modes
 │   ├── search.clj     # fuzzy search, exact match, temporal
 │   └── hierarchy.clj  # Markdown → block tree parser
-└── cli/
-    └── commands.clj   # Future: unified CLI dispatch
+├── cli/
+│   └── commands.clj   # CLI dispatch
+└── setup.clj          # Interactive config wizard
 ```
-
-| Layer | Responsibility | Swappable? |
-|---|---|---|
-| Protocol | HTTP transport, auth, 429 backoff, rate limiting | Yes — replace `roam.clj` for Obsidian/Logseq |
-| Core | Read/write/search ops, markdown parsing, UID capture | Stable interface |
-| CLI | Command parsing, output formatting | Surface |
-
-Core never touches HTTP or auth. Protocol handles all retry logic (exponential backoff on 429, up to 5 attempts).
 
 ## UID Capture
 
@@ -179,5 +157,3 @@ Roam's `create-block` API doesn't return the new block's UID. For nested writes 
 2. Waits 500ms for Roam to index
 3. Queries by exact content + `create/time` desc
 4. Uses the UID to nest children
-
-This is the same pattern used by the reference implementation in `qq/roam/client.clj`.

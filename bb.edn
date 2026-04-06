@@ -103,44 +103,5 @@
                  (bp/shell "bash" "-c" (str "cat " bb-bin " " jar " > " bin))
                  (bp/shell "chmod" "+x" bin)
                  (bfs/delete-if-exists jar)
-                 (println (str "✅ dist/roam built (" (quot (bfs/size bin) (* 1024 1024)) "MB, v" ver ")")))}
-
-  release {:doc "Bump version, build, git tag, GitHub release with binary"
-           :requires ([babashka.fs :as bfs] [babashka.process :as bp]
-                      [clojure.string :as bstr] [cheshire.core :as json])
-           :task
-           (let [old-ver (bstr/trim (slurp "VERSION"))
-                 parts (bstr/split old-ver (re-pattern "[.]"))
-                 new-ver (str (nth parts 0) "." (nth parts 1) "." (inc (Integer/parseInt (nth parts 2))))
-                 tag (str "v" new-ver)
-                 gh-token (bstr/trim (slurp (str (System/getProperty "user.home") "/.config/mata/github-token")))
-                 repo "kkprop/roam-cli"]
-             (spit "VERSION" (str new-ver "\n"))
-             (println (str "📦 " old-ver " → " new-ver))
-             (bp/shell "git" "add" "-A")
-             (bp/shell "git" "commit" "-m" (str "release: " tag))
-             (bp/shell "git" "push" "origin" "main")
-             (bp/shell "git" "tag" tag)
-             (bp/shell "git" "push" "origin" tag)
-             (bp/shell "bb" "build")
-             (let [resp (json/parse-string
-                          (:out (bp/shell {:out :string} "curl" "-s" "-X" "POST"
-                                          (str "https://api.github.com/repos/" repo "/releases")
-                                          "-H" (str "Authorization: token " gh-token)
-                                          "-H" "Content-Type: application/json"
-                                          "-d" (json/generate-string {:tag_name tag :name tag
-                                                                      :body (str "roam-cli " new-ver)})))
-                          true)
-                   upload-url (bstr/replace (str (:upload_url resp)) "{?name,label}" "")]
-               (when-not (:id resp)
-                 (println "❌ Release creation failed")
-                 (println resp)
-                 (System/exit 1))
-               (println "📤 Uploading binary...")
-               (bp/shell "curl" "-s" "-X" "POST"
-                         (str upload-url "?name=roam-macos-arm64")
-                         "-H" (str "Authorization: token " gh-token)
-                         "-H" "Content-Type: application/octet-stream"
-                         "--data-binary" "@dist/roam")
-               (println (str "✅ Released " tag " → " (:html_url resp)))))}}}
+                 (println (str "✅ dist/roam built (" (quot (bfs/size bin) (* 1024 1024)) "MB, v" ver ")")))}}}
 
