@@ -118,14 +118,32 @@
 
 ;; ── Output formatting ────────────────────────────────────────────────────────
 
+(defn- parse-flags
+  "Extract --uid, --count, --refs from args. Returns [opts remaining-args]."
+  [args]
+  (loop [remaining args, opts {}]
+    (if (empty? remaining)
+      [opts remaining]
+      (case (first remaining)
+        "--uid"   (recur (rest remaining) (assoc opts :uid true))
+        "--count" (recur (rest remaining) (assoc opts :count true))
+        "--refs"  (recur (rest remaining) (assoc opts :refs true))
+        [opts (vec remaining)]))))
+
 (defn format-tree
-  "Render block tree as indented text. When graph-key is provided, resolves ((uid)) refs."
-  ([block indent] (format-tree block indent nil))
-  ([block indent graph-key]
-   (let [s (resolve-refs graph-key (or (:block/string block) (:node/title block) ""))
-         children (sort-by #(or (:block/order %) 0) (or (:block/children block) []))]
-     (str (apply str (repeat indent "  ")) "- " s "\n"
-          (apply str (map #(format-tree % (inc indent) graph-key) children))))))
+  "Render block tree as indented text.
+   opts: :uid (show UIDs), :count (show child count), :graph-key (resolve refs)."
+  ([block indent] (format-tree block indent {}))
+  ([block indent opts]
+   (let [gk (:graph-key opts)
+         raw (or (:block/string block) (:node/title block) "")
+         s (resolve-refs gk raw)
+         children (sort-by #(or (:block/order %) 0) (or (:block/children block) []))
+         uid-str (when (:uid opts) (str " [" (:block/uid block) "]"))
+         cnt-str (when (and (:count opts) (seq children)) (str " [+" (count children) "]"))
+         prefix (apply str (repeat indent "  "))]
+     (str prefix "- " s (or uid-str "") (or cnt-str "") "\n"
+          (apply str (map #(format-tree % (inc indent) opts) children))))))
 
 (defn- format-query-table
   "Format query results as aligned columns."
@@ -177,41 +195,51 @@
 ;; ── Time-filtered reads ──────────────────────────────────────────────────────
 
 (defn daily-blocks
-  "Find all blocks created or edited in date range across the entire graph."
+  "Find all blocks created or edited in date range, with parent UIDs for tree building."
   [graph-key date-start date-end]
   (let [result (roam/q graph-key
-                       "[:find ?uid ?s ?ct ?et :in $ ?ds ?de :where
+                       "[:find ?uid ?s ?ct ?et ?puid :in $ ?ds ?de :where
                          [?b :block/uid ?uid] [?b :block/string ?s]
                          [?b :create/time ?ct] [?b :edit/time ?et]
+                         [?p :block/children ?b] [?p :block/uid ?puid]
                          (or (and [(>= ?ct ?ds)] [(<= ?ct ?de)])
                              (and [(>= ?et ?ds)] [(<= ?et ?de)]))]"
                        [date-start date-end])]
     (if (:error result)
       result
       {:blocks (->> (:result result)
-                    (mapv (fn [[uid s ct et]] {:uid uid :string s :time (max ct et)}))
+                    (mapv (fn [[uid s ct et puid]]
+                            {:uid uid :string (or s "") :time (max ct et) :parent-uid puid}))
                     (sort-by :time))})))
 
 ;; ── CLI wrappers ─────────────────────────────────────────────────────────────
 
 (defn- ->key [s] (keyword (str/replace s ":" "")))
 
-(defn read-cli [graph-key id]
-  (let [g (->key graph-key)
-        block (pull-block g id)]
-    (if (and block (not (:error block)))
-      (print (format-tree block 0 g))
-      (let [page (pull-page g id)]
-        (if (and page (not (:error page)))
-          (print (format-tree page 0 g))
-          (println "❌ Not found:" id))))))
+(defn read-cli [graph-key & args]
+  (let [[opts [id]] (parse-flags args)
+        g (->key graph-key)
+        opts (assoc opts :graph-key g)]
+    (if-not id
+      (println "Usage: bb read <graph> [--uid] [--count] <page-or-uid>")
+      (let [block (pull-block g id)]
+        (if (and block (not (:error block)))
+          (print (format-tree block 0 opts))
+          (let [page (pull-page g id)]
+            (if (and page (not (:error page)))
+              (print (format-tree page 0 opts))
+              (println "❌ Not found:" id))))))))
 
-(defn pull-cli [graph-key uid]
-  (let [g (->key graph-key)
-        result (pull-block g uid :deep true)]
-    (if (and result (not (:error result)))
-      (print (format-tree result 0 g))
-      (println "❌ Not found:" uid))))
+(defn pull-cli [graph-key & args]
+  (let [[opts [uid]] (parse-flags args)
+        g (->key graph-key)
+        opts (assoc opts :graph-key g)]
+    (if-not uid
+      (println "Usage: bb pull <graph> [--uid] [--count] <uid>")
+      (let [result (pull-block g uid :deep true)]
+        (if (and result (not (:error result)))
+          (print (format-tree result 0 opts))
+          (println "❌ Not found:" uid))))))
 
 (defn pull-shallow-cli [graph-key uid]
   (let [g (->key graph-key)
@@ -228,11 +256,13 @@
             (println (str "  • " (subs cs 0 (min 80 (count cs)))
                           "  [" (:block/uid c) (when (pos? gc) (str " +" gc)) "]"))))))))
 
-(defn daily-cli [graph-key]
-  (let [g (->key graph-key)
+(defn daily-cli [graph-key & args]
+  (let [[opts _] (parse-flags args)
+        g (->key graph-key)
+        opts (assoc opts :graph-key g)
         result (daily g)]
     (if (and result (not (:error result)))
-      (print (format-tree result 0 g))
+      (print (format-tree result 0 opts))
       (println "❌ Could not load daily page for" (roam/daily-title)))))
 
 (defn context-cli [graph-key uid]
@@ -244,7 +274,7 @@
             depth (count ancestors)]
         (doseq [[i {:keys [string]}] (map-indexed vector ancestors)]
           (println (str (apply str (repeat i "  ")) "↳ " (resolve-refs g string))))
-        (print (format-tree (:block result) depth g))))))
+        (print (format-tree (:block result) depth {:graph-key g}))))))
 
 (defn smart-context-cli [graph-key uid]
   (let [g (->key graph-key)
@@ -252,7 +282,7 @@
     (if (:error result)
       (println "❌" (:error result))
       (do (println (str "🎯 Root: " (:root-uid result) " → target: " (:target-uid result)))
-          (print (format-tree (:tree result) 0 g))))))
+          (print (format-tree (:tree result) 0 {:graph-key g}))))))
 
 (defn query-cli [graph-key query-str]
   (let [g (->key graph-key)
@@ -281,26 +311,55 @@
       (doseq [{:keys [uid string time]} (:blocks result)]
         (println (str (fmt-time time) "  " uid "  " (subs string 0 (min 100 (count string)))))))))
 
+(defn- truncate [s n] (if (> (count s) n) (str (subs s 0 n) "...") s))
+
+(defn- fmt-hm [ms]
+  (.format (java.text.SimpleDateFormat. "HH:mm") (java.util.Date. (long ms))))
+
+(defn- blocks->tree
+  "Build tree from flat blocks with :parent-uid. Returns roots (blocks whose parent is not in the set)."
+  [blocks]
+  (let [uid-set (set (map :uid blocks))
+        by-parent (group-by :parent-uid blocks)
+        roots (filter #(not (uid-set (:parent-uid %))) blocks)]
+    (letfn [(attach [block]
+              (let [children (sort-by :time (get by-parent (:uid block) []))]
+                (if (seq children)
+                  (assoc block :children (mapv attach children))
+                  block)))]
+      (->> roots (sort-by :time) (mapv attach)))))
+
+(defn- print-block-tree [roots indent]
+  (doseq [b roots]
+    (let [prefix (apply str (repeat indent "  "))
+          time-str (when (zero? indent) (str (fmt-hm (:time b)) "  "))
+          text (truncate (:string b) 80)]
+      (println (str prefix (or time-str "") text)))
+    (when-let [children (:children b)]
+      (print-block-tree children (inc indent)))))
+
 (defn today-cli [graph-key]
   (let [g (->key graph-key)
         result (daily-blocks g (start-of-today) (System/currentTimeMillis))]
     (if (:error result)
       (println "❌" (:error result))
-      (do (println (str (count (:blocks result)) " blocks created/edited today:"))
-          (doseq [{:keys [uid string time]} (:blocks result)]
-            (println (str "  " (fmt-time time) "  " uid "  " (subs string 0 (min 80 (count string))))))))))
+      (let [blocks (:blocks result)
+            roots (blocks->tree blocks)]
+        (println (str (count blocks) " blocks today:"))
+        (print-block-tree roots 0)))))
 
 (defn today-all-cli []
-  (let [cfg (roam/load-config)
-        graphs (keys (:roam-graphs cfg))
-        now (System/currentTimeMillis)
-        sot (start-of-today)
-        all-blocks (mapcat (fn [g]
-                             (let [r (daily-blocks g sot now)]
-                               (when-not (:error r)
-                                 (map #(assoc % :graph (name g)) (:blocks r)))))
-                           graphs)
-        sorted (sort-by :time all-blocks)]
-    (println (str (count sorted) " blocks across " (count graphs) " graphs today:"))
-    (doseq [{:keys [uid string time graph]} sorted]
-      (println (str "  " (fmt-time time) "  " graph "  " uid "  " (subs string 0 (min 70 (count string))))))))
+  (let [cfg (roam/load-config)]
+    (when-not cfg
+      (println "No config found. Run: roam-cli setup")
+      (System/exit 1))
+    (let [graphs (keys (:roam-graphs cfg))
+          now (System/currentTimeMillis)
+          sot (start-of-today)]
+      (doseq [g graphs]
+        (let [r (daily-blocks g sot now)]
+          (when (and (not (:error r)) (seq (:blocks r)))
+            (let [roots (blocks->tree (:blocks r))]
+              (println (str "=== " (name g) " (" (count (:blocks r)) " blocks) ==="))
+              (print-block-tree roots 0)
+              (println))))))))
