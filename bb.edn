@@ -174,5 +174,11 @@
                  (bp/shell "bash" "-c" (str "cat " bb-bin " " jar " > " bin))
                  (bp/shell "chmod" "+x" bin)
                  (bfs/delete-if-exists jar)
-                 (println (str "✅ dist/roam-cli built (" (quot (bfs/size bin) (* 1024 1024)) "MB, v" ver ")")))}}}
+                 ;; Auto-bump patch version for next build
+                 (let [parts (bstr/split ver (re-pattern "\\."))
+                       next-ver (if (= 3 (count parts))
+                                  (str (nth parts 0) "." (nth parts 1) "." (inc (parse-long (nth parts 2))))
+                                  ver)]
+                   (spit "VERSION" (str next-ver "\n"))
+                   (println (str "✅ dist/roam-cli built (" (quot (bfs/size bin) (* 1024 1024)) "MB, v" ver ") → next: v" next-ver))))}}}
 
