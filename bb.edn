@@ -5,7 +5,8 @@
              [roam.protocol.roam :as protocol]
              [roam.core.read :as read]
              [roam.core.write :as write]
-             [roam.core.search :as search])
+             [roam.core.search :as search]
+             [roam.setup :as setup])
 
   ;; Read
   read {:doc "Read page or block: <graph> <page-or-uid>"
@@ -90,6 +91,12 @@
                    (if (and g uid)
                      (read/context-cli g uid)
                      (println "Usage: bb context <graph> <uid>")))}
+
+  setup {:doc "Interactive config wizard"
+         :task (setup/setup-cli *command-line-args*)}
+
+  graphs {:doc "List configured graphs"
+          :task (setup/graphs-cli *command-line-args*)}
 
   build {:doc "Build standalone binary → dist/roam"
          :requires ([babashka.fs :as bfs] [babashka.process :as bp] [clojure.string :as bstr])
