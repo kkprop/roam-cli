@@ -81,4 +81,19 @@
            :task (let [[g uid] *command-line-args*]
                    (if (and g uid)
                      (read/context-cli g uid)
-                     (println "Usage: bb context <graph> <uid>")))}}}
+                     (println "Usage: bb context <graph> <uid>")))}
+
+  build {:doc "Build standalone binary → dist/roam"
+         :requires ([babashka.fs :as bfs] [babashka.process :as bp] [clojure.string :as bstr])
+         :task (let [ver (if (bfs/exists? "VERSION") (bstr/trim (slurp "VERSION")) "dev")
+                     jar "dist/roam.jar"
+                     bin "dist/roam"
+                     bb-bin (bstr/trim (:out (bp/shell {:out :string} "which" "bb")))]
+                 (bfs/create-dirs "dist")
+                 (println (str "📦 Building uberjar (v" ver ")..."))
+                 (bp/shell "bb" "uberjar" jar "-m" "roam.main")
+                 (println "🔗 Creating standalone binary...")
+                 (bp/shell "bash" "-c" (str "cat " bb-bin " " jar " > " bin))
+                 (bp/shell "chmod" "+x" bin)
+                 (bfs/delete-if-exists jar)
+                 (println (str "✅ dist/roam built (" (quot (bfs/size bin) (* 1024 1024)) "MB, v" ver ")")))}}}
