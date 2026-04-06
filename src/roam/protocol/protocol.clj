@@ -17,7 +17,12 @@
 (def selector-all
   "[* {:block/children ...}]")
 
-;; ── EID helpers ──────────────────────────────────────────────────────────────
+;; ── UID helpers ──────────────────────────────────────────────────────────────
 
-(defn block-eid [uid] (str "[:block/uid \"" uid "\"]"))
+(defn normalize-uid
+  "Strip ((uid)) wrapper — Roam copies UIDs as ((abc123))."
+  [uid]
+  (clojure.string/replace (str uid) #"^\(\(|\)\)$" ""))
+
+(defn block-eid [uid] (str "[:block/uid \"" (normalize-uid uid) "\"]"))
 (defn page-eid [title] (str "[:node/title \"" title "\"]"))

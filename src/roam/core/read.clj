@@ -42,13 +42,33 @@
           (recur (:uid parent) (conj ancestors parent))
           {:block block :ancestors (reverse ancestors)})))))
 
+;; ── ((uid)) reference resolution ─────────────────────────────────────────────
+
+(def ^:private ref-pattern #"\(\(([^)]+)\)\)")
+
+(defn- resolve-refs
+  "Replace ((uid)) with ((uid)) ↳ content. One level deep, no recursion."
+  [graph-key text]
+  (if (and graph-key text (str/includes? text "(("))
+    (str/replace text ref-pattern
+                 (fn [[match uid]]
+                   (let [result (roam/pull graph-key (proto/block-eid uid)
+                                          "[:block/string]")]
+                     (if-let [s (get-in result [:result :block/string])]
+                       (str match " ↳ " s)
+                       match))))
+    (or text "")))
+
 ;; ── Output formatting ────────────────────────────────────────────────────────
 
-(defn format-tree [block indent]
-  (let [s (or (:block/string block) (:node/title block) "")
-        children (or (:block/children block) [])]
-    (str (apply str (repeat indent "  ")) "- " s "\n"
-         (apply str (map #(format-tree % (inc indent)) children)))))
+(defn format-tree
+  "Render block tree as indented text. When graph-key is provided, resolves ((uid)) refs."
+  ([block indent] (format-tree block indent nil))
+  ([block indent graph-key]
+   (let [s (resolve-refs graph-key (or (:block/string block) (:node/title block) ""))
+         children (or (:block/children block) [])]
+     (str (apply str (repeat indent "  ")) "- " s "\n"
+          (apply str (map #(format-tree % (inc indent) graph-key) children))))))
 
 (defn- format-query-table
   "Format query results as aligned columns."
@@ -79,24 +99,24 @@
   (let [g (->key graph-key)
         block (pull-block g id)]
     (if (and block (not (:error block)))
-      (print (format-tree block 0))
+      (print (format-tree block 0 g))
       (let [page (pull-page g id)]
         (if (and page (not (:error page)))
-          (print (format-tree page 0))
+          (print (format-tree page 0 g))
           (println "❌ Not found:" id))))))
 
 (defn pull-cli [graph-key uid]
   (let [g (->key graph-key)
         result (pull-block g uid :deep true)]
     (if (and result (not (:error result)))
-      (print (format-tree result 0))
+      (print (format-tree result 0 g))
       (println "❌ Not found:" uid))))
 
 (defn daily-cli [graph-key]
   (let [g (->key graph-key)
         result (daily g)]
     (if (and result (not (:error result)))
-      (print (format-tree result 0))
+      (print (format-tree result 0 g))
       (println "❌ Could not load daily page for" (roam/daily-title)))))
 
 (defn context-cli [graph-key uid]
@@ -106,11 +126,9 @@
       (println "❌" (:error result))
       (let [ancestors (:ancestors result)
             depth (count ancestors)]
-        ;; Print ancestor chain with increasing indent
         (doseq [[i {:keys [string]}] (map-indexed vector ancestors)]
-          (println (str (apply str (repeat i "  ")) "↳ " string)))
-        ;; Print the target block tree at the right depth
-        (print (format-tree (:block result) depth))))))
+          (println (str (apply str (repeat i "  ")) "↳ " (resolve-refs g string))))
+        (print (format-tree (:block result) depth g))))))
 
 (defn query-cli [graph-key query-str]
   (let [g (->key graph-key)

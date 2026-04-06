@@ -52,6 +52,12 @@
                     (write/update-cli g uid (str/join " " content))
                     (println "Usage: bb update <graph> <uid> \"new content\"")))}
 
+  move {:doc "Move block: <graph> <block-uid> <new-parent-uid> [order]"
+        :task (let [[g uid parent order] *command-line-args*]
+                (if (and g uid parent)
+                  (write/move-cli g uid parent order)
+                  (println "Usage: bb move <graph> <block-uid> <new-parent-uid> [order]")))}
+
   ;; Search
   search {:doc "Search blocks: <graph> <term>"
           :task (let [[g & terms] *command-line-args*]

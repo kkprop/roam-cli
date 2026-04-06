@@ -2,6 +2,7 @@
   "API-agnostic write operations. Handles flat/titled/tree modes,
    UID capture after create, daily page lifecycle, recursive tree writes."
   (:require [clojure.string :as str]
+            [roam.protocol.protocol :as proto]
             [roam.protocol.roam :as roam]
             [roam.core.hierarchy :as hierarchy]
             [roam.core.search :as search]))
@@ -142,13 +143,14 @@
 ;; ── CLI wrappers ─────────────────────────────────────────────────────────────
 
 (defn- ->key [s] (keyword (str/replace s ":" "")))
+(defn- ->uid [s] (proto/normalize-uid s))
 
 (defn write-cli
   "roam write <graph> [--to uid] [--flat|--titled T|--tree] <content-or-file>"
   [graph-key content & {:keys [to mode title]}]
   (let [g (->key graph-key)
         opts (cond-> {}
-               to    (assoc :parent-uid to)
+               to    (assoc :parent-uid (->uid to))
                mode  (assoc :mode (keyword mode))
                title (assoc :title title))
         result (apply write g content (mapcat identity opts))]
@@ -157,7 +159,14 @@
       (println "✅ Written to" (name g)))))
 
 (defn update-cli [graph-key uid content]
-  (let [result (update-block (->key graph-key) uid content)]
+  (let [result (update-block (->key graph-key) (->uid uid) content)]
     (if (:error result)
       (println "❌" (:error result))
-      (println "✅ Block" uid "updated"))))
+      (println "✅ Block" (->uid uid) "updated"))))
+
+(defn move-cli [graph-key uid new-parent-uid & [order]]
+  (let [result (move-block (->key graph-key) (->uid uid) (->uid new-parent-uid)
+                           :order (or order "last"))]
+    (if (:error result)
+      (println "❌" (:error result))
+      (println "✅ Block" (->uid uid) "moved to" (->uid new-parent-uid)))))

@@ -43,6 +43,8 @@
    "write"           parse-write-args
    "update"          (fn [[g uid & c]]  (if (and g uid (seq c)) (write/update-cli g uid (str/join " " c))
                                             (println "Usage: roam update <graph> <uid> <content>")))
+   "move"            (fn [[g uid p & [o]]] (if (and g uid p) (write/move-cli g uid p o)
+                                            (println "Usage: roam move <graph> <block-uid> <new-parent-uid> [order]")))
    "test-connection" (fn [[g]]          (if g (protocol/test-connection g)
                                             (println "Usage: roam test-connection <graph>")))
    "setup"           setup/setup-cli
@@ -58,6 +60,7 @@
    "pages"           "Search page titles"
    "write"           "Write content (--titled, --tree, --to)"
    "update"          "Update existing block"
+   "move"            "Move block to new parent"
    "test-connection" "Verify graph API connection"
    "setup"           "Interactive config wizard"
    "graphs"          "List configured graphs"})
