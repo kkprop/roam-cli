@@ -83,7 +83,7 @@
   ([block indent] (format-tree block indent nil))
   ([block indent graph-key]
    (let [s (resolve-refs graph-key (or (:block/string block) (:node/title block) ""))
-         children (or (:block/children block) [])]
+         children (sort-by #(or (:block/order %) 0) (or (:block/children block) []))]
      (str (apply str (repeat indent "  ")) "- " s "\n"
           (apply str (map #(format-tree % (inc indent) graph-key) children))))))
 
