@@ -12,7 +12,9 @@
           (conj result (assoc header :content (str/join "\n" content-lines)))
           result)
         (let [line (first remaining)]
-          (if (str/starts-with? line "#")
+          (if (and (str/starts-with? line "#")
+                   (let [hashes (count (take-while #(= % \#) line))]
+                     (and (<= hashes 6) (> (count line) hashes) (= \space (nth line hashes)))))
             (let [level (count (take-while #(= % \#) line))
                   text (str/trim (subs line level))
                   updated (if header
