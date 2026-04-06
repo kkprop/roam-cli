@@ -4,7 +4,8 @@
             [roam.protocol.roam :as protocol]
             [roam.core.read :as read]
             [roam.core.write :as write]
-            [roam.core.search :as search]))
+            [roam.core.search :as search]
+            [roam.setup :as setup]))
 
 (def version
   (try (str/trim (slurp "VERSION")) (catch Exception _ "dev")))
@@ -43,7 +44,9 @@
    "update"          (fn [[g uid & c]]  (if (and g uid (seq c)) (write/update-cli g uid (str/join " " c))
                                             (println "Usage: roam update <graph> <uid> <content>")))
    "test-connection" (fn [[g]]          (if g (protocol/test-connection g)
-                                            (println "Usage: roam test-connection <graph>")))})
+                                            (println "Usage: roam test-connection <graph>")))
+   "setup"           setup/setup-cli
+   "graphs"          setup/graphs-cli})
 
 (def docs
   {"read"            "Read page or block"
@@ -55,7 +58,9 @@
    "pages"           "Search page titles"
    "write"           "Write content (--titled, --tree, --to)"
    "update"          "Update existing block"
-   "test-connection" "Verify graph API connection"})
+   "test-connection" "Verify graph API connection"
+   "setup"           "Interactive config wizard"
+   "graphs"          "List configured graphs"})
 
 (defn -main [& args]
   (let [cmd (first args)

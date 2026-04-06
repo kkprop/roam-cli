@@ -65,6 +65,14 @@
                    (println "Usage: bb pages <graph> \"term\"")))}
 
   ;; Utility
+  setup {:doc "Interactive setup wizard — add Roam graph connection"
+         :task (do (require 'roam.setup)
+                   ((resolve 'roam.setup/setup)))}
+
+  graphs {:doc "List configured graphs"
+          :task (do (require 'roam.setup)
+                    ((resolve 'roam.setup/list-graphs)))}
+
   test-connection {:doc "Test graph connection: <graph>"
                    :task (let [[g] *command-line-args*]
                            (if g

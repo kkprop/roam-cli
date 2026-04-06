@@ -9,7 +9,13 @@
 (def base-url "https://api.roamresearch.com/api/graph")
 
 (defn load-config []
-  (edn/read-string (slurp (str (System/getProperty "user.home") "/roam-cli/config.edn"))))
+  (let [home (System/getProperty "user.home")
+        primary (str home "/.roam-cli/config.edn")
+        legacy  (str home "/roam-cli/config.edn")
+        path (cond (.exists (java.io.File. primary)) primary
+                   (.exists (java.io.File. legacy))  legacy
+                   :else (throw (ex-info "No config found. Run: bb setup" {})))]
+    (edn/read-string (slurp path))))
 
 (defn get-graph-config [graph-key]
   (let [cfg (load-config)
