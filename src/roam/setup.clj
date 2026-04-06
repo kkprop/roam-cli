@@ -120,11 +120,12 @@
 (defn add-graph-cli [[key-hint]] (add-graph key-hint))
 
 (defn ensure-config
-  "Check config exists. If not, run wizard. Returns true if config available."
+  "Check config exists. If not, print friendly message and exit. Returns true if config available."
   []
   (if (detect-config)
     true
-    (do (setup-wizard) (some? (detect-config)))))
+    (do (println "No config found. Run: roam-cli setup")
+        (System/exit 1))))
 
 (defn default-graph
   "Return the default graph key name as string, or nil.

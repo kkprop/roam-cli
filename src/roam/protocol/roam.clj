@@ -19,10 +19,7 @@
     (catch Exception _ nil)))
 
 (defn get-graph-config [graph-key]
-  (let [cfg (or (load-config)
-                (do (require 'roam.setup)
-                    ((resolve 'roam.setup/setup-wizard))
-                    (load-config)))]
+  (let [cfg (load-config)]
     (when-not cfg
       (println "No config found. Run: roam-cli setup")
       (System/exit 1))
