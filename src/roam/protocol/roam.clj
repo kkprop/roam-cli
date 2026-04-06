@@ -24,6 +24,23 @@
                 :else graph-key)]
     (get-in cfg [:roam-graphs (or k (:default-graph cfg))])))
 
+;; --- Rate tracker ---
+
+(def ^:private call-log (atom []))
+
+(defn- prune-old-calls [now-ms]
+  (swap! call-log (fn [log] (filterv #(> % (- now-ms 60000)) log))))
+
+(defn pace-delay
+  "Return ms to sleep before next call. 200ms normally, 1000ms if >50 calls/min."
+  []
+  (let [now (System/currentTimeMillis)]
+    (prune-old-calls now)
+    (if (> (count @call-log) 50) 1000 200)))
+
+(defn- track-call! []
+  (swap! call-log conj (System/currentTimeMillis)))
+
 ;; --- Rate limit / retry ---
 
 (defn request
@@ -36,6 +53,7 @@
                  "Content-Type" "application/json"
                  "Accept" "application/json"}]
     (loop [attempt 1]
+      (track-call!)
       (let [resp (case method
                    :post (http/post url {:headers headers
                                          :body (json/generate-string data)

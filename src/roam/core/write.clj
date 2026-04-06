@@ -42,7 +42,7 @@
   (let [result (create-block graph-key parent-uid content :order order)]
     (if (:error result)
       result
-      (do (Thread/sleep index-delay-ms)
+      (do (Thread/sleep (max index-delay-ms (roam/pace-delay)))
           (if-let [uid (search/find-block-by-content graph-key content)]
             {:success true :uid uid}
             {:success true :uid nil :warning "block created but UID not found"})))))
@@ -91,6 +91,11 @@
           (assoc child-result :title-uid title-uid))
         {:error "title block created but UID capture failed — cannot nest content"}))))
 
+(defn- count-blocks
+  "Count total blocks in a hierarchy."
+  [blocks]
+  (reduce (fn [n b] (+ n 1 (count-blocks (or (:block/children b) [])))) 0 blocks))
+
 (defn write-tree
   "Parse markdown → block hierarchy, write recursively with inter-block delays.
    Each parent needs UID capture before its children can be written."
@@ -99,19 +104,23 @@
         blocks (hierarchy/parse-and-convert content)]
     (if (empty? blocks)
       (write-flat graph-key content :parent-uid parent)
-      (letfn [(write-children [parent-uid children]
-                (doseq [block children]
-                  (let [text (:block/string block)
-                        grandchildren (:block/children block)]
-                    (if (seq grandchildren)
-                      ;; Need UID capture to nest grandchildren
-                      (let [result (create-block-with-uid graph-key parent-uid text)]
-                        (when-let [uid (:uid result)]
-                          (write-children uid grandchildren)))
-                      ;; Leaf node — no UID capture needed
-                      (create-block graph-key parent-uid text)))))]
-        (write-children parent blocks)
-        {:success true :blocks-written (count blocks)}))))
+      (let [total (count-blocks blocks)]
+        (when (> total 20)
+          (let [est-secs (int (+ (* total 0.5) (* total 0.2)))]
+            (println (str "⚠️  Writing " total " blocks, estimated time ~" est-secs "s"))))
+        (letfn [(write-children [parent-uid children]
+                  (doseq [block children]
+                    (let [text (:block/string block)
+                          grandchildren (:block/children block)]
+                      (if (seq grandchildren)
+                        (let [result (create-block-with-uid graph-key parent-uid text)]
+                          (when-let [uid (:uid result)]
+                            (write-children uid grandchildren)))
+                        ;; Leaf node — pace to avoid rate limits
+                        (do (create-block graph-key parent-uid text)
+                            (Thread/sleep (roam/pace-delay)))))))]
+          (write-children parent blocks)
+          {:success true :blocks-written total})))))
 
 ;; ── Smart entry point ────────────────────────────────────────────────────────
 
