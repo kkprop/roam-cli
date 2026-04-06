@@ -34,7 +34,8 @@
 (defn context
   "Walk ancestor chain from block to root. Returns {:block ... :ancestors [...]}."
   [graph-key uid]
-  (let [block (pull-block graph-key uid :deep true)]
+  (let [uid (proto/normalize-uid uid)
+        block (pull-block graph-key uid :deep true)]
     (if (:error block)
       block
       (loop [cur uid, ancestors []]
