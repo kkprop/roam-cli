@@ -102,11 +102,11 @@
                              (protocol/test-connection g)
                              (println "Usage: bb test-connection <graph>")))}
 
-  daily {:doc "Show today's daily page: <graph>"
-         :task (let [[g] *command-line-args*]
+  daily {:doc "Show today's daily page: <graph> [--uid] [--count]"
+         :task (let [[g & rest] *command-line-args*]
                  (if g
-                   (read/daily-cli g)
-                   (println "Usage: bb daily <graph>")))}
+                   (apply read/daily-cli g rest)
+                   (println "Usage: bb daily <graph> [--uid] [--count]")))}
 
   context {:doc "Show block in context (ancestor chain): <graph> <uid>"
            :task (let [[g uid] *command-line-args*]
@@ -132,12 +132,12 @@
                    (read/range-cli g id s e)
                    (println "Usage: bb range <graph> <uid-or-page> <start> <end>")))}
 
-  today {:doc "All blocks created/edited today: <graph> or --all"
-         :task (let [[g] *command-line-args*]
+  today {:doc "All blocks today: <graph> [--uid] [--count] or --all"
+         :task (let [[g & rest] *command-line-args*]
                  (cond
                    (= g "--all") (read/today-all-cli)
-                   g             (read/today-cli g)
-                   :else         (println "Usage: bb today <graph> or bb today --all")))}
+                   g             (apply read/today-cli g rest)
+                   :else         (println "Usage: bb today <graph> [--uid] [--count] or bb today --all")))}
 
   ;; Drafts
   draft {:doc "Save draft locally: <graph> <content>"
