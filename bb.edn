@@ -1,0 +1,84 @@
+{:paths ["src"]
+
+ :tasks
+ {:requires ([clojure.string :as str]
+             [roam.protocol.roam :as protocol]
+             [roam.core.read :as read]
+             [roam.core.write :as write]
+             [roam.core.search :as search])
+
+  ;; Read
+  read {:doc "Read page or block: <graph> <page-or-uid>"
+        :task (let [[g id] *command-line-args*]
+                (if (and g id)
+                  (read/read-cli g id)
+                  (println "Usage: bb read <graph> <page-or-uid>")))}
+
+  query {:doc "Datalog query: <graph> <query-string>"
+         :task (let [[g & q] *command-line-args*]
+                 (if (and g (seq q))
+                   (read/query-cli g (str/join " " q))
+                   (println "Usage: bb query <graph> \"[:find ...]\"")))}
+
+  pull {:doc "Pull block by UID: <graph> <uid>"
+        :task (let [[g uid] *command-line-args*]
+                (if (and g uid)
+                  (read/pull-cli g uid)
+                  (println "Usage: bb pull <graph> <uid>")))}
+
+  ;; Write
+  write {:doc "Write: <graph> [--titled T] [--tree] [--to uid] <content-or-file>"
+         :task (let [[g & args] *command-line-args*]
+                 (if (and g (seq args))
+                   (loop [remaining args, opts {}]
+                     (if (empty? remaining)
+                       (println "Usage: bb write <graph> [--titled T] [--tree] <content>")
+                       (let [a (first remaining)]
+                         (cond
+                           (= a "--titled")
+                           (recur (drop 2 remaining) (assoc opts :title (second remaining) :mode "titled"))
+                           (= a "--tree")
+                           (recur (rest remaining) (assoc opts :mode "tree"))
+                           (= a "--to")
+                           (recur (drop 2 remaining) (assoc opts :to (second remaining)))
+                           :else
+                           (apply write/write-cli g (str/join " " remaining) (mapcat identity opts))))))
+                   (println "Usage: bb write <graph> [--titled T] [--tree] <content>")))}
+
+  update {:doc "Update block: <graph> <uid> <new-content>"
+          :task (let [[g uid & content] *command-line-args*]
+                  (if (and g uid (seq content))
+                    (write/update-cli g uid (str/join " " content))
+                    (println "Usage: bb update <graph> <uid> \"new content\"")))}
+
+  ;; Search
+  search {:doc "Search blocks: <graph> <term>"
+          :task (let [[g & terms] *command-line-args*]
+                  (if (and g (seq terms))
+                    (search/search-cli g (str/join " " terms))
+                    (println "Usage: bb search <graph> \"term\"")))}
+
+  pages {:doc "Search pages: <graph> <term>"
+         :task (let [[g & terms] *command-line-args*]
+                 (if (and g (seq terms))
+                   (search/pages-cli g (str/join " " terms))
+                   (println "Usage: bb pages <graph> \"term\"")))}
+
+  ;; Utility
+  test-connection {:doc "Test graph connection: <graph>"
+                   :task (let [[g] *command-line-args*]
+                           (if g
+                             (protocol/test-connection g)
+                             (println "Usage: bb test-connection <graph>")))}
+
+  daily {:doc "Show today's daily page: <graph>"
+         :task (let [[g] *command-line-args*]
+                 (if g
+                   (read/daily-cli g)
+                   (println "Usage: bb daily <graph>")))}
+
+  context {:doc "Show block in context (ancestor chain): <graph> <uid>"
+           :task (let [[g uid] *command-line-args*]
+                   (if (and g uid)
+                     (read/context-cli g uid)
+                     (println "Usage: bb context <graph> <uid>")))}}}

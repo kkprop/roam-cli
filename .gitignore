@@ -1,2 +1,5 @@
 config.edn
 tmp/
+*.log
+.nrepl-port
+.cpcache/
