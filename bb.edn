@@ -67,12 +67,10 @@
 
   ;; Utility
   setup {:doc "Interactive setup wizard — add Roam graph connection"
-         :task (do (require 'roam.setup)
-                   ((resolve 'roam.setup/setup)))}
+         :task (setup/setup-cli *command-line-args*)}
 
   graphs {:doc "List configured graphs"
-          :task (do (require 'roam.setup)
-                    ((resolve 'roam.setup/list-graphs)))}
+          :task (setup/graphs-cli *command-line-args*)}
 
   test-connection {:doc "Test graph connection: <graph>"
                    :task (let [[g] *command-line-args*]
@@ -91,12 +89,6 @@
                    (if (and g uid)
                      (read/context-cli g uid)
                      (println "Usage: bb context <graph> <uid>")))}
-
-  setup {:doc "Interactive config wizard"
-         :task (setup/setup-cli *command-line-args*)}
-
-  graphs {:doc "List configured graphs"
-          :task (setup/graphs-cli *command-line-args*)}
 
   build {:doc "Build standalone binary → dist/roam"
          :requires ([babashka.fs :as bfs] [babashka.process :as bp] [clojure.string :as bstr])
