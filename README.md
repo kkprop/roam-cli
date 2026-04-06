@@ -18,7 +18,7 @@ roam --version
 git clone https://github.com/kkprop/roam-cli.git ~/roam-cli
 cd ~/roam-cli
 bb build
-./dist/roam --version
+./dist/roam-cli --version
 ```
 
 Requires [Babashka](https://github.com/babashka/babashka) >= 1.3.177.
@@ -112,7 +112,7 @@ bb query <graph> '<datalog>'        # Raw Datalog query
 bb setup                            # Interactive config wizard
 bb graphs                           # List configured graphs
 bb test-connection <graph>          # Verify API token and graph access
-bb build                            # Build standalone binary → dist/roam
+bb build                            # Build standalone binary → dist/roam-cli
 ```
 
 ## Config

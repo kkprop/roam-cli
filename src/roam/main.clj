@@ -77,7 +77,7 @@
 
       :else
       (do (println (str "roam-cli " version))
-          (println "\nUsage: roam <command> [args]\n")
+          (println "\nUsage: roam-cli <command> [args]\n")
           (doseq [t (sort (keys tasks))]
             (println (format "  %-17s %s" t (get docs t ""))))
           (when cmd (println (str "\nUnknown command: " cmd)))

@@ -13,9 +13,11 @@
         primary (str home "/.roam-cli/config.edn")
         legacy  (str home "/roam-cli/config.edn")
         path (cond (.exists (java.io.File. primary)) primary
-                   (.exists (java.io.File. legacy))  legacy
-                   :else (throw (ex-info "No config found. Run: bb setup" {})))]
-    (edn/read-string (slurp path))))
+                   (.exists (java.io.File. legacy))  legacy)]
+    (if path
+      (edn/read-string (slurp path))
+      (do (println "No config found. Run: roam-cli setup")
+          (System/exit 1)))))
 
 (defn get-graph-config [graph-key]
   (let [cfg (load-config)

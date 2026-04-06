@@ -26,9 +26,9 @@ git push origin "$TAG"
 bb build
 
 # 5. Compress
-tar czf dist/roam-macos-arm64.tar.gz -C dist roam
-SIZE=$(du -h dist/roam-macos-arm64.tar.gz | cut -f1)
-echo "📦 dist/roam-macos-arm64.tar.gz ($SIZE)"
+tar czf dist/roam-cli-macos-arm64.tar.gz -C dist roam-cli
+SIZE=$(du -h dist/roam-cli-macos-arm64.tar.gz | cut -f1)
+echo "📦 dist/roam-cli-macos-arm64.tar.gz ($SIZE)"
 
 # 6. Create GitHub release, parse upload URL
 RELEASE_JSON=$(curl -s -X POST \
@@ -50,11 +50,11 @@ fi
 # 7. Upload asset
 echo "📤 Uploading binary..."
 curl -s -X POST \
-  "${UPLOAD_URL}?name=roam-macos-arm64.tar.gz" \
+  "${UPLOAD_URL}?name=roam-cli-macos-arm64.tar.gz" \
   -H "Authorization: token $TOKEN" \
   -H "Content-Type: application/gzip" \
-  --data-binary @dist/roam-macos-arm64.tar.gz > /dev/null
+  --data-binary @dist/roam-cli-macos-arm64.tar.gz > /dev/null
 
 # 8. Done
 echo "✅ Released $TAG → $HTML_URL"
-echo "   Asset: roam-macos-arm64.tar.gz ($SIZE)"
+echo "   Asset: roam-cli-macos-arm64.tar.gz ($SIZE)"
