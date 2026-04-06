@@ -9,11 +9,11 @@
              [roam.setup :as setup])
 
   ;; Read
-  read {:doc "Read page or block: <graph> <page-or-uid>"
-        :task (let [[g id] *command-line-args*]
-                (if (and g id)
-                  (read/read-cli g id)
-                  (println "Usage: bb read <graph> <page-or-uid>")))}
+  read {:doc "Read: <graph> [--uid] [--count] <page-or-uid>"
+        :task (let [[g & rest] *command-line-args*]
+                (if g
+                  (apply read/read-cli g rest)
+                  (println "Usage: bb read <graph> [--uid] [--count] <page-or-uid>")))}
 
   query {:doc "Datalog query: <graph> <query-string>"
          :task (let [[g & q] *command-line-args*]
@@ -21,11 +21,11 @@
                    (read/query-cli g (str/join " " q))
                    (println "Usage: bb query <graph> \"[:find ...]\"")))}
 
-  pull {:doc "Pull block by UID: <graph> <uid>"
-        :task (let [[g uid] *command-line-args*]
-                (if (and g uid)
-                  (read/pull-cli g uid)
-                  (println "Usage: bb pull <graph> <uid>")))}
+  pull {:doc "Pull: <graph> [--uid] [--count] <uid>"
+        :task (let [[g & rest] *command-line-args*]
+                (if g
+                  (apply read/pull-cli g rest)
+                  (println "Usage: bb pull <graph> [--uid] [--count] <uid>")))}
 
   pull-shallow {:doc "Shallow pull — first-level children with UIDs: <graph> <uid>"
                 :task (let [[g uid] *command-line-args*]

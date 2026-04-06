@@ -329,24 +329,28 @@
                   block)))]
       (->> roots (sort-by :time) (mapv attach)))))
 
-(defn- print-block-tree [roots indent]
+(defn- print-block-tree [roots indent opts]
   (doseq [b roots]
     (let [prefix (apply str (repeat indent "  "))
           time-str (when (zero? indent) (str (fmt-hm (:time b)) "  "))
-          text (truncate (:string b) 80)]
-      (println (str prefix (or time-str "") text)))
+          text (truncate (:string b) 80)
+          uid-str (when (:uid opts) (str " [" (:uid b) "]"))
+          cnt (count (or (:children b) []))
+          cnt-str (when (and (:count opts) (pos? cnt)) (str " [+" cnt "]"))]
+      (println (str prefix (or time-str "") text (or uid-str "") (or cnt-str ""))))
     (when-let [children (:children b)]
-      (print-block-tree children (inc indent)))))
+      (print-block-tree children (inc indent) opts))))
 
-(defn today-cli [graph-key]
-  (let [g (->key graph-key)
+(defn today-cli [graph-key & args]
+  (let [[opts _] (parse-flags args)
+        g (->key graph-key)
         result (daily-blocks g (start-of-today) (System/currentTimeMillis))]
     (if (:error result)
       (println "❌" (:error result))
       (let [blocks (:blocks result)
             roots (blocks->tree blocks)]
         (println (str (count blocks) " blocks today:"))
-        (print-block-tree roots 0)))))
+        (print-block-tree roots 0 opts)))))
 
 (defn today-all-cli []
   (let [cfg (roam/load-config)]

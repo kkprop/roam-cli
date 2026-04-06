@@ -27,16 +27,16 @@
     (println "Usage: roam write <graph> [--titled T] [--tree] [--to uid] <content>")))
 
 (def tasks
-  {"read"            (fn [[g id]]       (if (and g id) (read/read-cli g id)
-                                            (println "Usage: roam read <graph> <page-or-uid>")))
-   "pull"            (fn [[g uid]]      (if (and g uid) (read/pull-cli g uid)
-                                            (println "Usage: roam pull <graph> <uid>")))
+  {"read"            (fn [[g & rest]]    (if g (apply read/read-cli g rest)
+                                            (println "Usage: roam-cli read <graph> [--uid] [--count] <page-or-uid>")))
+   "pull"            (fn [[g & rest]]    (if g (apply read/pull-cli g rest)
+                                            (println "Usage: roam-cli pull <graph> [--uid] [--count] <uid>")))
    "pull-shallow"    (fn [[g uid]]      (if (and g uid) (read/pull-shallow-cli g uid)
-                                            (println "Usage: roam pull-shallow <graph> <uid>")))
-   "daily"           (fn [[g]]          (if g (read/daily-cli g)
-                                            (println "Usage: roam daily <graph>")))
+                                            (println "Usage: roam-cli pull-shallow <graph> <uid>")))
+   "daily"           (fn [[g & rest]]   (if g (apply read/daily-cli g rest)
+                                            (println "Usage: roam-cli daily <graph> [--uid] [--count]")))
    "context"         (fn [[g uid]]      (if (and g uid) (read/context-cli g uid)
-                                            (println "Usage: roam context <graph> <uid>")))
+                                            (println "Usage: roam-cli context <graph> <uid>")))
    "smart-context"   (fn [[g uid]]      (if (and g uid) (read/smart-context-cli g uid)
                                             (println "Usage: roam-cli smart-context <graph> <uid>")))
    "query"           (fn [[g & q]]      (if (and g (seq q)) (read/query-cli g (str/join " " q))
@@ -60,10 +60,10 @@
                                             (println "Usage: roam-cli after <graph> <uid-or-page> <date>")))
    "range"           (fn [[g id s e]]   (if (and g id s e) (read/range-cli g id s e)
                                             (println "Usage: roam-cli range <graph> <uid-or-page> <start> <end>")))
-   "today"           (fn [[g]]          (cond
+   "today"           (fn [[g & rest]]   (cond
                                             (= g "--all") (read/today-all-cli)
-                                            g              (read/today-cli g)
-                                            :else          (println "Usage: roam-cli today <graph> or --all")))
+                                            g              (apply read/today-cli g rest)
+                                            :else          (println "Usage: roam-cli today <graph> [--uid] [--count] or --all")))
    "setup"           setup/setup-cli
    "graphs"          setup/graphs-cli
    "draft"           (fn [[g & c]]      (if (and g (seq c)) (draft/draft-cli g (str/join " " c))
