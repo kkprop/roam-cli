@@ -43,6 +43,46 @@
           (recur (:uid parent) (conj ancestors parent))
           {:block block :ancestors (reverse ancestors)})))))
 
+;; ── Smart context ────────────────────────────────────────────────────────────
+
+(defn- stop-boundary?
+  "True if this parent is a daily note, timestamp, or page-level container."
+  [content]
+  (when content
+    (let [s (str/trim content)]
+      (or (re-find #"^\d{2}:\d{2}$" s)           ; bare timestamp
+          (re-find #"^\[\[.*\]\]$" s)             ; [[page ref]] wrapper
+          (re-find #"(?i)#personal|#daily" s))))) ; personal/daily tags
+
+(defn- content-root?
+  "True if this block looks like a structured content root (has ((uid)) refs)."
+  [content]
+  (when content
+    (and (str/includes? content "((")
+         (str/includes? content "))"))))
+
+(defn find-root-ancestor
+  "Walk up from block, find the meaningful content boundary.
+   Stops before daily notes / timestamps. Prefers blocks with ((uid)) refs."
+  [graph-key uid]
+  (loop [cur uid, best nil]
+    (if-let [{:keys [uid string]} (get-parent graph-key cur)]
+      (cond
+        (stop-boundary? string) (or best cur)
+        (content-root? string)  (recur uid uid)
+        :else                   (recur uid best))
+      (or best cur))))
+
+(defn smart-context
+  "Find meaningful root ancestor, deep pull from there."
+  [graph-key uid]
+  (let [uid (proto/normalize-uid uid)
+        root-uid (find-root-ancestor graph-key uid)
+        root (pull-block graph-key root-uid :deep true)]
+    (if (:error root)
+      root
+      {:root-uid root-uid :target-uid uid :tree root})))
+
 ;; ── Shallow pull ──────────────────────────────────────────────────────────────
 
 (defn pull-shallow
@@ -206,6 +246,14 @@
           (println (str (apply str (repeat i "  ")) "↳ " (resolve-refs g string))))
         (print (format-tree (:block result) depth g))))))
 
+(defn smart-context-cli [graph-key uid]
+  (let [g (->key graph-key)
+        result (smart-context g uid)]
+    (if (:error result)
+      (println "❌" (:error result))
+      (do (println (str "🎯 Root: " (:root-uid result) " → target: " (:target-uid result)))
+          (print (format-tree (:tree result) 0 g))))))
+
 (defn query-cli [graph-key query-str]
   (let [g (->key graph-key)
         result (roam/q g query-str [])]
@@ -241,3 +289,18 @@
       (do (println (str (count (:blocks result)) " blocks created/edited today:"))
           (doseq [{:keys [uid string time]} (:blocks result)]
             (println (str "  " (fmt-time time) "  " uid "  " (subs string 0 (min 80 (count string))))))))))
+
+(defn today-all-cli []
+  (let [cfg (roam/load-config)
+        graphs (keys (:roam-graphs cfg))
+        now (System/currentTimeMillis)
+        sot (start-of-today)
+        all-blocks (mapcat (fn [g]
+                             (let [r (daily-blocks g sot now)]
+                               (when-not (:error r)
+                                 (map #(assoc % :graph (name g)) (:blocks r)))))
+                           graphs)
+        sorted (sort-by :time all-blocks)]
+    (println (str (count sorted) " blocks across " (count graphs) " graphs today:"))
+    (doseq [{:keys [uid string time graph]} sorted]
+      (println (str "  " (fmt-time time) "  " graph "  " uid "  " (subs string 0 (min 70 (count string))))))))

@@ -5,6 +5,7 @@
             [roam.core.read :as read]
             [roam.core.write :as write]
             [roam.core.search :as search]
+            [roam.core.draft :as draft]
             [roam.setup :as setup]))
 
 (def version
@@ -36,6 +37,8 @@
                                             (println "Usage: roam daily <graph>")))
    "context"         (fn [[g uid]]      (if (and g uid) (read/context-cli g uid)
                                             (println "Usage: roam context <graph> <uid>")))
+   "smart-context"   (fn [[g uid]]      (if (and g uid) (read/smart-context-cli g uid)
+                                            (println "Usage: roam-cli smart-context <graph> <uid>")))
    "query"           (fn [[g & q]]      (if (and g (seq q)) (read/query-cli g (str/join " " q))
                                             (println "Usage: roam query <graph> '[:find ...]'")))
    "search"          (fn [[g & t]]      (if (and g (seq t)) (search/search-cli g (str/join " " t))
@@ -57,10 +60,18 @@
                                             (println "Usage: roam-cli after <graph> <uid-or-page> <date>")))
    "range"           (fn [[g id s e]]   (if (and g id s e) (read/range-cli g id s e)
                                             (println "Usage: roam-cli range <graph> <uid-or-page> <start> <end>")))
-   "today"           (fn [[g]]          (if g (read/today-cli g)
-                                            (println "Usage: roam-cli today <graph>")))
+   "today"           (fn [[g]]          (cond
+                                            (= g "--all") (read/today-all-cli)
+                                            g              (read/today-cli g)
+                                            :else          (println "Usage: roam-cli today <graph> or --all")))
    "setup"           setup/setup-cli
-   "graphs"          setup/graphs-cli})
+   "graphs"          setup/graphs-cli
+   "draft"           (fn [[g & c]]      (if (and g (seq c)) (draft/draft-cli g (str/join " " c))
+                                            (println "Usage: roam-cli draft <graph> <content>")))
+   "drafts"          (fn [[g]]          (if g (draft/drafts-cli g)
+                                            (println "Usage: roam-cli drafts <graph>")))
+   "publish"         (fn [[g & [n]]]    (if g (draft/publish-cli g n)
+                                            (println "Usage: roam-cli publish <graph> [n]")))})
 
 (def docs
   {"read"            "Read page or block"
@@ -68,6 +79,7 @@
    "pull-shallow"    "First-level children overview with UIDs"
    "daily"           "Show today's daily page"
    "context"         "Show block with ancestor chain"
+   "smart-context"   "Smart context — find meaningful content root"
    "query"           "Raw Datalog query"
    "search"          "Search block content"
    "pages"           "Search page titles"
@@ -81,7 +93,10 @@
    "range"           "Blocks created/edited in date range"
    "today"           "All blocks created/edited today"
    "setup"           "Interactive config wizard"
-   "graphs"          "List configured graphs"})
+   "graphs"          "List configured graphs"
+   "draft"           "Save draft locally"
+   "drafts"          "List saved drafts"
+   "publish"         "Publish draft(s) to Roam"})
 
 (defn -main [& args]
   (let [cmd (first args)

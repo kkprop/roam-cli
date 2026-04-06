@@ -114,6 +114,12 @@
                      (read/context-cli g uid)
                      (println "Usage: bb context <graph> <uid>")))}
 
+  smart-context {:doc "Smart context — meaningful content root: <graph> <uid>"
+                 :task (let [[g uid] *command-line-args*]
+                         (if (and g uid)
+                           (read/smart-context-cli g uid)
+                           (println "Usage: bb smart-context <graph> <uid>")))}
+
   after {:doc "Blocks created/edited after date: <graph> <uid-or-page> <date>"
          :task (let [[g id d] *command-line-args*]
                  (if (and g id d)
@@ -126,11 +132,34 @@
                    (read/range-cli g id s e)
                    (println "Usage: bb range <graph> <uid-or-page> <start> <end>")))}
 
-  today {:doc "All blocks created/edited today: <graph>"
+  today {:doc "All blocks created/edited today: <graph> or --all"
          :task (let [[g] *command-line-args*]
-                 (if g
-                   (read/today-cli g)
-                   (println "Usage: bb today <graph>")))}
+                 (cond
+                   (= g "--all") (read/today-all-cli)
+                   g             (read/today-cli g)
+                   :else         (println "Usage: bb today <graph> or bb today --all")))}
+
+  ;; Drafts
+  draft {:doc "Save draft locally: <graph> <content>"
+         :task (do (require 'roam.core.draft)
+                   (let [[g & c] *command-line-args*]
+                     (if (and g (seq c))
+                       ((resolve 'roam.core.draft/draft-cli) g (str/join " " c))
+                       (println "Usage: bb draft <graph> \"content\""))))}
+
+  drafts {:doc "List saved drafts: <graph>"
+          :task (do (require 'roam.core.draft)
+                    (let [[g] *command-line-args*]
+                      (if g
+                        ((resolve 'roam.core.draft/drafts-cli) g)
+                        (println "Usage: bb drafts <graph>"))))}
+
+  publish {:doc "Publish draft(s) to Roam: <graph> [n]"
+           :task (do (require 'roam.core.draft)
+                     (let [[g n] *command-line-args*]
+                       (if g
+                         ((resolve 'roam.core.draft/publish-cli) g n)
+                         (println "Usage: bb publish <graph> [n]"))))}
 
   build {:doc "Build standalone binary → dist/roam-cli"
          :requires ([babashka.fs :as bfs] [babashka.process :as bp] [clojure.string :as bstr])
