@@ -37,18 +37,44 @@
           :else
           (recur (rest remaining) result))))))
 
+(defn- parse-list-items
+  "Parse indented list items into nested block tree.
+   Handles: - item, * item, and plain text with 2-space indent levels."
+  [lines]
+  (let [parse-line (fn [line]
+                     (let [trimmed (str/trim line)
+                           indent (count (take-while #(= % \space) line))
+                           level (quot indent 2)
+                           text (cond (str/starts-with? trimmed "- ") (subs trimmed 2)
+                                      (str/starts-with? trimmed "* ") (subs trimmed 2)
+                                      :else trimmed)]
+                       {:level level :text text}))
+        items (mapv parse-line (remove str/blank? lines))]
+    (letfn [(build [items min-level]
+              (loop [remaining items, result []]
+                (if (empty? remaining)
+                  [result remaining]
+                  (let [{:keys [level]} (first remaining)]
+                    (cond
+                      (= level min-level)
+                      (let [[children rest-items] (build (rest remaining) (inc min-level))]
+                        (recur rest-items (conj result (cond-> {:block/string (:text (first remaining))}
+                                                        (seq children) (assoc :block/children children)))))
+                      (> level min-level)
+                      (let [[children rest-items] (build remaining (inc min-level))]
+                        [(into result children) rest-items])
+                      :else
+                      [result remaining])))))]
+      (first (build items (if (seq items) (:level (first items)) 0))))))
+
 (defn to-roam-blocks
   "Convert tree nodes to Roam block format."
   [tree]
   (mapv (fn [{:keys [text content children]}]
-          (let [content-blocks (when-not (str/blank? content)
-                                 (->> (str/split-lines content)
-                                      (remove str/blank?)
-                                      (mapv (fn [line]
-                                              (let [clean (cond (str/starts-with? (str/trim line) "- ") (subs (str/trim line) 2)
-                                                                (str/starts-with? (str/trim line) "* ") (subs (str/trim line) 2)
-                                                                :else (str/trim line))]
-                                                {:block/string clean})))))
+          (let [content-lines (when-not (str/blank? content)
+                                (remove str/blank? (str/split-lines content)))
+                content-blocks (when (seq content-lines)
+                                 (parse-list-items content-lines))
                 child-blocks (to-roam-blocks children)
                 all-children (into (vec (or content-blocks [])) child-blocks)]
             (cond-> {:block/string text}
