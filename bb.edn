@@ -34,23 +34,25 @@
                           (println "Usage: bb pull-shallow <graph> <uid>")))}
 
   ;; Write
-  write {:doc "Write: <graph> [--titled T] [--tree] [--to uid] <content-or-file>"
+  write {:doc "Write: <graph> [--titled T] [--tree] [--sequential] [--to uid] <content-or-file>"
          :task (let [[g & args] *command-line-args*]
                  (if (and g (seq args))
                    (loop [remaining args, opts {}]
                      (if (empty? remaining)
-                       (println "Usage: bb write <graph> [--titled T] [--tree] <content>")
+                       (println "Usage: bb write <graph> [--titled T] [--tree] [--sequential] <content>")
                        (let [a (first remaining)]
                          (cond
                            (= a "--titled")
                            (recur (drop 2 remaining) (assoc opts :title (second remaining) :mode "titled"))
                            (= a "--tree")
                            (recur (rest remaining) (assoc opts :mode "tree"))
+                           (= a "--sequential")
+                           (recur (rest remaining) (assoc opts :sequential true))
                            (= a "--to")
                            (recur (drop 2 remaining) (assoc opts :to (second remaining)))
                            :else
                            (apply write/write-cli g (str/join " " remaining) (mapcat identity opts))))))
-                   (println "Usage: bb write <graph> [--titled T] [--tree] <content>")))}
+                   (println "Usage: bb write <graph> [--titled T] [--tree] [--sequential] <content>")))}
 
   update {:doc "Update block: <graph> <uid> <new-content>"
           :task (let [[g uid & content] *command-line-args*]
