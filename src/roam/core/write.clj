@@ -5,16 +5,36 @@
             [roam.protocol.protocol :as proto]
             [roam.protocol.roam :as roam]
             [roam.core.hierarchy :as hierarchy]
-            [roam.core.search :as search]))
+            [roam.core.search :as search])
+  (:import [java.util.concurrent Semaphore]))
 
 ;; ── Primitives ───────────────────────────────────────────────────────────────
 
+(def ^:private uid-chars "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
+
+(defn gen-uid
+  "Generate a 9-char alphanumeric UID matching Roam's format."
+  []
+  (let [rng (java.security.SecureRandom.)]
+    (apply str (repeatedly 9 #(nth uid-chars (.nextInt rng (count uid-chars)))))))
+
+(defn assign-uids
+  "Walk parsed hierarchy and assign a :block/uid to every block."
+  [blocks]
+  (mapv (fn [block]
+          (cond-> (assoc block :block/uid (gen-uid))
+            (:block/children block)
+            (update :block/children assign-uids)))
+        blocks))
+
 (defn create-block
-  "Create block under parent. Returns {:success true} or {:error ...}."
-  [graph-key parent-uid content & {:keys [order] :or {order "last"}}]
+  "Create block under parent. Returns {:success true} or {:error ...}.
+   Optional :uid to pre-assign the block UID, :order for position."
+  [graph-key parent-uid content & {:keys [order uid] :or {order "last"}}]
   (roam/write! graph-key {:action "create-block"
                           :location {:parent-uid parent-uid :order order}
-                          :block {:string content :open true}}))
+                          :block (cond-> {:string content :open true}
+                                   uid (assoc :uid uid))}))
 
 (defn update-block [graph-key uid content]
   (roam/write! graph-key {:action "update-block"
@@ -92,36 +112,91 @@
           (assoc child-result :title-uid title-uid))
         {:error "title block created but UID capture failed — cannot nest content"}))))
 
-(defn- count-blocks
-  "Count total blocks in a hierarchy."
+;; ── UID generation ────────────────────────────────────────────────────────────
+
+(def ^:private uid-chars "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
+
+(defn gen-uid
+  "Generate a 9-char Roam-compatible UID."
+  []
+  (apply str (repeatedly 9 #(nth uid-chars (rand-int (count uid-chars))))))
+
+(defn assign-uids
+  "Walk block tree, assigning :block/uid to every node that lacks one."
   [blocks]
+  (mapv (fn [b]
+          (let [b (if (:block/uid b) b (assoc b :block/uid (gen-uid)))]
+            (if-let [children (:block/children b)]
+              (assoc b :block/children (assign-uids children))
+              b)))
+        blocks))
+
+;; ── Concurrent write support ─────────────────────────────────────────────────
+
+(def ^:private write-semaphore (Semaphore. 5))
+
+(defn- create-block-with-pre-uid
+  "Create block with pre-assigned UID. Acquires semaphore permit for rate limiting."
+  [graph-key parent-uid uid content order]
+  (.acquire write-semaphore)
+  (try
+    (roam/write! graph-key {:action "create-block"
+                            :location {:parent-uid parent-uid :order order}
+                            :block {:uid uid :string content :open true}})
+    (finally
+      (.release write-semaphore))))
+
+(defn- write-tree-concurrent
+  "Write pre-assigned block tree concurrently. Siblings fan out in parallel,
+   depth is sequential (parent must exist before children)."
+  [graph-key parent-uid blocks]
+  (let [futs (mapv (fn [i block]
+                     (future
+                       (let [uid (:block/uid block)
+                             text (:block/string block)
+                             result (create-block-with-pre-uid graph-key parent-uid uid text i)]
+                         (when-not (:error result)
+                           (when-let [children (:block/children block)]
+                             (write-tree-concurrent graph-key uid children)))
+                         result)))
+                   (range) blocks)]
+    (mapv deref futs)))
+
+(defn- write-tree-sequential
+  "Write block tree sequentially (old path). Uses UID capture for parents."
+  [graph-key parent-uid blocks]
+  (doseq [block blocks]
+    (let [text (:block/string block)
+          grandchildren (:block/children block)]
+      (if (seq grandchildren)
+        (let [result (create-block-with-uid graph-key parent-uid text)]
+          (when-let [uid (:uid result)]
+            (write-tree-sequential graph-key uid grandchildren)))
+        (do (create-block graph-key parent-uid text)
+            (Thread/sleep (roam/pace-delay)))))))
+
+(defn- count-blocks [blocks]
   (reduce (fn [n b] (+ n 1 (count-blocks (or (:block/children b) [])))) 0 blocks))
 
 (defn write-tree
-  "Parse markdown → block hierarchy, write recursively with inter-block delays.
-   Each parent needs UID capture before its children can be written."
-  [graph-key content & {:keys [parent-uid]}]
+  "Parse markdown → block hierarchy, write recursively.
+   Default: concurrent with pre-assigned UIDs. Pass :sequential true for old path."
+  [graph-key content & {:keys [parent-uid sequential]}]
   (let [parent (resolve-parent graph-key parent-uid)
         blocks (hierarchy/parse-and-convert content)]
     (if (empty? blocks)
       (write-flat graph-key content :parent-uid parent)
       (let [total (count-blocks blocks)]
         (when (> total 20)
-          (let [est-secs (int (+ (* total 0.5) (* total 0.2)))]
-            (println (str "⚠️  Writing " total " blocks, estimated time ~" est-secs "s"))))
-        (letfn [(write-children [parent-uid children]
-                  (doseq [block children]
-                    (let [text (:block/string block)
-                          grandchildren (:block/children block)]
-                      (if (seq grandchildren)
-                        (let [result (create-block-with-uid graph-key parent-uid text)]
-                          (when-let [uid (:uid result)]
-                            (write-children uid grandchildren)))
-                        ;; Leaf node — pace to avoid rate limits
-                        (do (create-block graph-key parent-uid text)
-                            (Thread/sleep (roam/pace-delay)))))))]
-          (write-children parent blocks)
-          {:success true :blocks-written total})))))
+          (println (str "⚠️  Writing " total " blocks"
+                        (if sequential
+                          (str ", estimated time ~" (int (* total 0.7)) "s")
+                          " (concurrent, ~5 at a time)"))))
+        (if sequential
+          (write-tree-sequential graph-key parent blocks)
+          (let [blocks (assign-uids blocks)]
+            (write-tree-concurrent graph-key parent blocks)))
+        {:success true :blocks-written total}))))
 
 ;; ── Positional insert ─────────────────────────────────────────────────────────
 
@@ -150,8 +225,8 @@
 
 (defn write
   "Auto-detect write mode from content shape.
-   opts — :parent-uid, :mode (:flat/:titled/:tree), :title"
-  [graph-key content-arg & {:keys [parent-uid mode title]}]
+   opts — :parent-uid, :mode (:flat/:titled/:tree), :title, :sequential"
+  [graph-key content-arg & {:keys [parent-uid mode title sequential]}]
   (let [content (read-content content-arg)
         effective-mode (or mode
                           (cond
@@ -161,7 +236,7 @@
     (case effective-mode
       :flat   (write-flat graph-key content :parent-uid parent-uid)
       :titled (write-titled graph-key (or title "Untitled") content :parent-uid parent-uid)
-      :tree   (write-tree graph-key content :parent-uid parent-uid))))
+      :tree   (write-tree graph-key content :parent-uid parent-uid :sequential sequential))))
 
 ;; ── CLI wrappers ─────────────────────────────────────────────────────────────
 
@@ -169,13 +244,14 @@
 (defn- ->uid [s] (proto/normalize-uid s))
 
 (defn write-cli
-  "roam write <graph> [--to uid] [--flat|--titled T|--tree] <content-or-file>"
-  [graph-key content & {:keys [to mode title]}]
+  "roam write <graph> [--to uid] [--flat|--titled T|--tree] [--sequential] <content-or-file>"
+  [graph-key content & {:keys [to mode title sequential]}]
   (let [g (->key graph-key)
         opts (cond-> {}
-               to    (assoc :parent-uid (->uid to))
-               mode  (assoc :mode (keyword mode))
-               title (assoc :title title))
+               to         (assoc :parent-uid (->uid to))
+               mode       (assoc :mode (keyword mode))
+               title      (assoc :title title)
+               sequential (assoc :sequential true))
         result (apply write g content (mapcat identity opts))]
     (if (:error result)
       (println "❌" (:error result))
