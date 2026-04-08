@@ -147,20 +147,27 @@
       (.release write-semaphore))))
 
 (defn- write-tree-concurrent
-  "Write pre-assigned block tree concurrently. Siblings fan out in parallel,
-   depth is sequential (parent must exist before children)."
+  "Write block tree with cross-branch parallelism. Siblings within a level are
+   written sequentially (preserving order), but independent subtrees fan out
+   concurrently. E.g. A's children and B's children write in parallel."
   [graph-key parent-uid blocks]
-  (let [futs (mapv (fn [i block]
-                     (future
+  ;; Write siblings sequentially to preserve order, collect child futures
+  (let [child-futs (doall
+                     (for [[i block] (map-indexed vector blocks)]
                        (let [uid (:block/uid block)
-                             text (:block/string block)
-                             result (create-block-with-pre-uid graph-key parent-uid uid text i)]
-                         (when-not (:error result)
-                           (when-let [children (:block/children block)]
-                             (write-tree-concurrent graph-key uid children)))
-                         result)))
-                   (range) blocks)]
-    (mapv deref futs)))
+                             text (:block/string block)]
+                         (.acquire write-semaphore)
+                         (try
+                           (roam/write! graph-key {:action "create-block"
+                                                   :location {:parent-uid parent-uid :order i}
+                                                   :block {:uid uid :string text :open true}})
+                           (finally
+                             (.release write-semaphore)))
+                         ;; Return future for children (or nil for leaves)
+                         (when-let [children (:block/children block)]
+                           (future (write-tree-concurrent graph-key uid children))))))]
+    ;; Wait for all child subtrees to complete
+    (doseq [f child-futs :when f] @f)))
 
 (defn- write-tree-sequential
   "Write block tree sequentially (old path). Uses UID capture for parents."
