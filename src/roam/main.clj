@@ -14,17 +14,20 @@
 (defn- parse-write-args
   "Parse write flags: --titled T, --tree, --to uid, then content."
   [[g & args]]
-  (if (and g (seq args))
-    (loop [remaining args, opts {}]
-      (if (empty? remaining)
-        (println "Usage: roam write <graph> [--titled T] [--tree] [--to uid] <content>")
-        (let [a (first remaining)]
-          (cond
-            (= a "--titled") (recur (drop 2 remaining) (assoc opts :title (second remaining) :mode "titled"))
-            (= a "--tree")   (recur (rest remaining) (assoc opts :mode "tree"))
-            (= a "--to")     (recur (drop 2 remaining) (assoc opts :to (second remaining)))
-            :else            (apply write/write-cli g (str/join " " remaining) (mapcat identity opts))))))
-    (println "Usage: roam write <graph> [--titled T] [--tree] [--to uid] <content>")))
+  (if (or (= g "--help") (= g "-h") (some #{"--help" "-h"} args))
+    (println "Usage: roam-cli write <graph> [--titled T] [--tree] [--sequential] [--to uid] <content-or-file>")
+    (if (and g (seq args))
+      (loop [remaining args, opts {}]
+        (if (empty? remaining)
+          (println "Usage: roam-cli write <graph> [--titled T] [--tree] [--sequential] [--to uid] <content>")
+          (let [a (first remaining)]
+            (cond
+              (= a "--titled")     (recur (drop 2 remaining) (assoc opts :title (second remaining) :mode "titled"))
+              (= a "--tree")       (recur (rest remaining) (assoc opts :mode "tree"))
+              (= a "--sequential") (recur (rest remaining) (assoc opts :sequential true))
+              (= a "--to")         (recur (drop 2 remaining) (assoc opts :to (second remaining)))
+              :else                (apply write/write-cli g (str/join " " remaining) (mapcat identity opts))))))
+      (println "Usage: roam-cli write <graph> [--titled T] [--tree] [--sequential] [--to uid] <content>"))))
 
 (def tasks
   {"read"            (fn [[g & rest]]    (if g (apply read/read-cli g rest)
@@ -103,38 +106,58 @@
 
 (defn- maybe-prepend-default-graph
   "If command needs a graph and none given, prepend the default/sole graph."
-  [cmd cmd-args]
-  (if (no-graph-cmds cmd)
-    cmd-args
-    (if-let [dg (setup/default-graph)]
-      (if (empty? cmd-args)
-        ;; No args at all — prepend default graph
-        [dg]
-        ;; Has args — check if first arg is a known graph key
-        (if (get (:roam-graphs (setup/load-config)) (keyword (str/replace (first cmd-args) ":" "")))
-          cmd-args
-          (into [dg] cmd-args)))
-      cmd-args)))
+  [cmd args]
+  (if-let [dg (setup/default-graph)]
+    (if (empty? args)
+      [dg]
+      (if (get (:roam-graphs (setup/load-config)) (keyword (str/replace (first args) ":" "")))
+        args
+        (into [dg] args)))
+    args))
+
+(defn- extract-graph-flag
+  "Strip -g/--graph <val> from args, return {:graph g :args rest}.
+   The extracted graph overrides any positional graph arg."
+  [args]
+  (loop [remaining args, out [], graph nil]
+    (if (empty? remaining)
+      {:graph graph :args out}
+      (let [a (first remaining)]
+        (if (or (= a "-g") (= a "--graph"))
+          (recur (drop 2 remaining) out (second remaining))
+          (recur (rest remaining) (conj out a) graph))))))
+
+(defn- print-usage []
+  (println (str "roam-cli " version))
+  (println "\nUsage: roam-cli <command> [args]\n")
+  (doseq [t (sort (keys tasks))]
+    (println (format "  %-17s %s" t (get docs t "")))))
 
 (defn -main [& args]
   (try
     (let [cmd (first args)
-          raw-args (vec (rest args))
-          cmd-args (if (get tasks cmd) (maybe-prepend-default-graph cmd raw-args) raw-args)]
+          raw-args (vec (rest args))]
       (cond
+        (or (nil? cmd) (= cmd "--help") (= cmd "-h"))
+        (print-usage)
+
         (or (= cmd "--version") (= cmd "-v"))
         (println (str "roam-cli " version))
 
         (get tasks cmd)
-        ((get tasks cmd) cmd-args)
+        (let [{:keys [graph args]} (extract-graph-flag raw-args)
+              cmd-args (if (no-graph-cmds cmd)
+                         args
+                         ;; If -g provided, prepend it as the graph arg
+                         (if graph
+                           (into [graph] args)
+                           (maybe-prepend-default-graph cmd args)))]
+          ((get tasks cmd) cmd-args))
 
         :else
-        (do (println (str "roam-cli " version))
-            (println "\nUsage: roam-cli <command> [args]\n")
-            (doseq [t (sort (keys tasks))]
-              (println (format "  %-17s %s" t (get docs t ""))))
-            (when cmd (println (str "\nUnknown command: " cmd)))
-            (System/exit (if cmd 1 0)))))
+        (do (print-usage)
+            (println (str "\nUnknown command: " cmd))
+            (System/exit 1))))
     (catch Exception e
       (println (str "Error: " (.getMessage e)))
       (System/exit 1))))

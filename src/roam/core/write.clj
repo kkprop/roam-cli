@@ -112,39 +112,9 @@
           (assoc child-result :title-uid title-uid))
         {:error "title block created but UID capture failed — cannot nest content"}))))
 
-;; ── UID generation ────────────────────────────────────────────────────────────
-
-(def ^:private uid-chars "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
-
-(defn gen-uid
-  "Generate a 9-char Roam-compatible UID."
-  []
-  (apply str (repeatedly 9 #(nth uid-chars (rand-int (count uid-chars))))))
-
-(defn assign-uids
-  "Walk block tree, assigning :block/uid to every node that lacks one."
-  [blocks]
-  (mapv (fn [b]
-          (let [b (if (:block/uid b) b (assoc b :block/uid (gen-uid)))]
-            (if-let [children (:block/children b)]
-              (assoc b :block/children (assign-uids children))
-              b)))
-        blocks))
-
 ;; ── Concurrent write support ─────────────────────────────────────────────────
 
 (def ^:private write-semaphore (Semaphore. 5))
-
-(defn- create-block-with-pre-uid
-  "Create block with pre-assigned UID. Acquires semaphore permit for rate limiting."
-  [graph-key parent-uid uid content order]
-  (.acquire write-semaphore)
-  (try
-    (roam/write! graph-key {:action "create-block"
-                            :location {:parent-uid parent-uid :order order}
-                            :block {:uid uid :string content :open true}})
-    (finally
-      (.release write-semaphore))))
 
 (defn- write-tree-concurrent
   "Write block tree with cross-branch parallelism. Siblings within a level are
@@ -161,6 +131,7 @@
                            (roam/write! graph-key {:action "create-block"
                                                    :location {:parent-uid parent-uid :order i}
                                                    :block {:uid uid :string text :open true}})
+                           (Thread/sleep (roam/pace-delay))
                            (finally
                              (.release write-semaphore)))
                          ;; Return future for children (or nil for leaves)
