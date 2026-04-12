@@ -39,19 +39,55 @@
           :else
           (recur (rest remaining) result))))))
 
+(defn- join-table-lines
+  "Detect consecutive |-prefixed lines and join them into a single block string."
+  [lines]
+  (loop [remaining lines, table-acc [], result []]
+    (if (empty? remaining)
+      (if (seq table-acc)
+        (conj result (str/join "\n" table-acc))
+        result)
+      (let [line (first remaining)]
+        (if (str/starts-with? (str/trim line) "|")
+          (recur (rest remaining) (conj table-acc line) result)
+          (if (seq table-acc)
+            (recur (rest remaining) [] (conj (conj result (str/join "\n" table-acc)) line))
+            (recur (rest remaining) [] (conj result line))))))))
+
 (defn- parse-list-items
   "Parse indented list items into nested block tree.
-   Handles: - item, * item, and plain text with 2-space indent levels."
+   Handles: - item, * item, plain text with 2-space indent levels,
+   bold headers (**text** or text:) as implicit parents, and markdown tables."
   [lines]
-  (let [parse-line (fn [line]
+  (let [lines (join-table-lines lines)
+        parse-line (fn [line]
                      (let [trimmed (str/trim line)
                            indent (count (take-while #(= % \space) line))
                            level (quot indent 2)
                            text (cond (str/starts-with? trimmed "- ") (subs trimmed 2)
                                       (str/starts-with? trimmed "* ") (subs trimmed 2)
-                                      :else trimmed)]
-                       {:level level :text text}))
-        items (mapv parse-line (remove str/blank? lines))]
+                                      :else trimmed)
+                           parent? (and (not (str/starts-with? trimmed "- "))
+                                        (not (str/starts-with? trimmed "* "))
+                                        (or (str/includes? text "**")
+                                            (str/ends-with? (str/trim text) ":")))]
+                       {:level level :text text :parent parent?}))
+        items (mapv parse-line (remove str/blank? lines))
+        ;; adjust-implicit-parents: when a :parent item at level N is followed
+        ;; by non-parent items at the same level N, bump followers to N+1
+        items (loop [remaining items, result [], last-parent-level nil]
+                (if (empty? remaining)
+                  result
+                  (let [{:keys [level parent] :as item} (first remaining)]
+                    (cond
+                      parent
+                      (recur (rest remaining) (conj result item) level)
+
+                      (and last-parent-level (= level last-parent-level))
+                      (recur (rest remaining) (conj result (update item :level inc)) last-parent-level)
+
+                      :else
+                      (recur (rest remaining) (conj result item) nil)))))]
     (letfn [(build [items min-level]
               (loop [remaining items, result []]
                 (if (empty? remaining)
