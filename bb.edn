@@ -143,6 +143,12 @@
                    g             (apply read/today-cli g rest)
                    :else         (println "Usage: bb today <graph> [--uid] [--count] or bb today --all")))}
 
+  backup {:doc "Backup daily page or all today's blocks: <graph> [date] [--all]"
+          :task (let [[g & rest] *command-line-args*]
+                  (if g
+                    (apply read/backup-cli g rest)
+                    (println "Usage: bb backup <graph> [yyyy-MM-dd] [--all]")))}
+
   ;; Drafts
   draft {:doc "Save draft locally: <graph> <content>"
          :task (do (require 'roam.core.draft)

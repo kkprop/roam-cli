@@ -67,6 +67,8 @@
                                             (= g "--all") (read/today-all-cli)
                                             g              (apply read/today-cli g rest)
                                             :else          (println "Usage: roam-cli today <graph> [--uid] [--count] or --all")))
+   "backup"          (fn [[g & rest]]   (if g (apply read/backup-cli g rest)
+                                            (println "Usage: roam-cli backup <graph> [date] [--all]")))
    "setup"           setup/setup-cli
    "graphs"          setup/graphs-cli
    "draft"           (fn [[g & c]]      (if (and g (seq c)) (draft/draft-cli g (str/join " " c))
@@ -95,6 +97,7 @@
    "after"           "Blocks created/edited after date"
    "range"           "Blocks created/edited in date range"
    "today"           "All blocks created/edited today"
+   "backup"          "Backup daily page or all today's blocks to file"
    "setup"           "Interactive config wizard"
    "graphs"          "List configured graphs"
    "draft"           "Save draft locally"

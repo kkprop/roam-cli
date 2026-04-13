@@ -1,6 +1,7 @@
 (ns roam.core.read
   "API-agnostic read operations. No HTTP, no auth, no Roam-specific logic."
-  (:require [clojure.string :as str]
+  (:require [clojure.java.io :as io]
+            [clojure.string :as str]
             [roam.protocol.protocol :as proto]
             [roam.protocol.roam :as roam]))
 
@@ -379,3 +380,84 @@
               (println (str "=== " (name g) " (" (count (:blocks r)) " blocks) ==="))
               (print-block-tree roots 0)
               (println))))))))
+
+;; ── Backup ───────────────────────────────────────────────────────────────────
+
+(defn- backup-dir [graph-key]
+  (str (System/getProperty "user.home") "/.roam-cli/backups/" (name graph-key)))
+
+(defn- date-str
+  ([] (.format (java.text.SimpleDateFormat. "yyyy-MM-dd") (java.util.Date.)))
+  ([date] date))
+
+(defn- format-md
+  "Format block tree as markdown with UIDs as HTML comments."
+  [block indent]
+  (let [s (or (:block/string block) (:node/title block) "")
+        uid (:block/uid block)
+        children (sort-by #(or (:block/order %) 0) (or (:block/children block) []))
+        prefix (apply str (repeat indent "  "))]
+    (str prefix "- " s (when uid (str " <!-- " uid " -->")) "\n"
+         (apply str (map #(format-md % (inc indent)) children)))))
+
+(defn- existing-uids
+  "Extract UIDs from existing backup file."
+  [path]
+  (if (.exists (io/file path))
+    (set (map second (re-seq #"<!-- (\S+) -->" (slurp path))))
+    #{}))
+
+(defn- format-block-row
+  "Format a flat block (from daily-blocks) as markdown with UID comment."
+  [{:keys [uid string time]}]
+  (let [ts (.format (java.text.SimpleDateFormat. "HH:mm") (java.util.Date. (long time)))]
+    (str "- " ts " " string " <!-- " uid " -->")))
+
+(defn backup-cli [graph-key & args]
+  (let [[opts rest-args] (parse-flags args)
+        g (->key graph-key)
+        all? (some #{"--all"} rest-args)
+        rest-args (remove #{"--all"} rest-args)
+        date (or (first rest-args) (date-str))
+        dir (backup-dir g)
+        path (str dir "/" date (if all? "-all" "") ".md")]
+    (io/make-parents path)
+    (if all?
+      ;; --all: backup all blocks created/edited on this date
+      (let [ds (parse-date date)
+            de (+ ds 86400000)
+            result (daily-blocks g ds de)]
+        (if (:error result)
+          (println "❌" (:error result))
+          (let [blocks (:blocks result)
+                old-uids (existing-uids path)
+                new-blocks (remove #(old-uids (:uid %)) blocks)]
+            (if (empty? new-blocks)
+              (println (str "✅ " path " — up to date (" (count blocks) " blocks)"))
+              (do (spit path
+                        (str (when (.exists (io/file path)) (slurp path))
+                             (str/join "\n" (map format-block-row new-blocks)) "\n")
+                        )
+                  (println (str "✅ " path " — " (count new-blocks) " new blocks"
+                                (when (seq old-uids) (str " (" (count old-uids) " existing)")))))))))
+      ;; Default: backup daily page tree
+      (let [title (if (= date (date-str))
+                    (roam/daily-title)
+                    ;; Parse date to Roam title format
+                    (let [d (.parse (java.text.SimpleDateFormat. "yyyy-MM-dd") date)
+                          m (.format (java.text.SimpleDateFormat. "MMMM" java.util.Locale/ENGLISH) d)
+                          day (Integer/parseInt (.format (java.text.SimpleDateFormat. "d") d))
+                          y (.format (java.text.SimpleDateFormat. "yyyy") d)
+                          sfx (cond (#{11 12 13} day) "th"
+                                    (= 1 (mod day 10)) "st"
+                                    (= 2 (mod day 10)) "nd"
+                                    (= 3 (mod day 10)) "rd"
+                                    :else "th")]
+                      (str m " " day sfx ", " y)))
+            page (pull-page g title)]
+        (if (or (nil? page) (:error page))
+          (println "❌ No daily page found for" title)
+          (let [md (format-md page 0)
+                old-uids (existing-uids path)]
+            (spit path md)
+            (println (str "✅ " path " — backed up"))))))))
