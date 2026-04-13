@@ -112,17 +112,17 @@
                    (apply read/daily-cli g rest)
                    (println "Usage: bb daily <graph> [--uid] [--count]")))}
 
-  context {:doc "Show block in context (ancestor chain): <graph> <uid>"
-           :task (let [[g uid] *command-line-args*]
-                   (if (and g uid)
-                     (read/context-cli g uid)
-                     (println "Usage: bb context <graph> <uid>")))}
+  context {:doc "Show block in context: <graph> [--clean] <uid>"
+           :task (let [[g & rest] *command-line-args*]
+                   (if g
+                     (apply read/context-cli g rest)
+                     (println "Usage: bb context <graph> [--clean] <uid>")))}
 
-  smart-context {:doc "Smart context — meaningful content root: <graph> <uid>"
-                 :task (let [[g uid] *command-line-args*]
-                         (if (and g uid)
-                           (read/smart-context-cli g uid)
-                           (println "Usage: bb smart-context <graph> <uid>")))}
+  smart-context {:doc "Smart context — meaningful content root: <graph> [--clean] <uid>"
+                 :task (let [[g & rest] *command-line-args*]
+                         (if g
+                           (apply read/smart-context-cli g rest)
+                           (println "Usage: bb smart-context <graph> [--clean] <uid>")))}
 
   after {:doc "Blocks created/edited after date: <graph> <uid-or-page> <date>"
          :task (let [[g id d] *command-line-args*]

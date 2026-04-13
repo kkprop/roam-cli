@@ -119,14 +119,16 @@
 ;; ── Output formatting ────────────────────────────────────────────────────────
 
 (defn- parse-flags
-  "Extract --uid, --count, --refs from args. Returns [opts remaining-args]."
+  "Extract display flags from args. Defaults: uid=true, count=true.
+   --clean suppresses both. --uid/--count toggle individually."
   [args]
-  (loop [remaining args, opts {}]
+  (loop [remaining args, opts {:uid true :count true}]
     (if (empty? remaining)
       [opts remaining]
       (case (first remaining)
-        "--uid"   (recur (rest remaining) (assoc opts :uid true))
-        "--count" (recur (rest remaining) (assoc opts :count true))
+        "--clean" (recur (rest remaining) (assoc opts :uid false :count false))
+        "--uid"   (recur (rest remaining) (update opts :uid not))
+        "--count" (recur (rest remaining) (update opts :count not))
         "--refs"  (recur (rest remaining) (assoc opts :refs true))
         [opts (vec remaining)]))))
 
@@ -265,24 +267,32 @@
       (print (format-tree result 0 opts))
       (println "❌ Could not load daily page for" (roam/daily-title)))))
 
-(defn context-cli [graph-key uid]
-  (let [g (->key graph-key)
-        result (context g uid)]
-    (if (:error result)
-      (println "❌" (:error result))
-      (let [ancestors (:ancestors result)
-            depth (count ancestors)]
-        (doseq [[i {:keys [string]}] (map-indexed vector ancestors)]
-          (println (str (apply str (repeat i "  ")) "↳ " (resolve-refs g string))))
-        (print (format-tree (:block result) depth {:graph-key g}))))))
+(defn context-cli [graph-key & args]
+  (let [[opts [uid]] (parse-flags args)
+        g (->key graph-key)
+        opts (assoc opts :graph-key g)]
+    (if-not uid
+      (println "Usage: bb context <graph> [--clean] <uid>")
+      (let [result (context g uid)]
+        (if (:error result)
+          (println "❌" (:error result))
+          (let [ancestors (:ancestors result)
+                depth (count ancestors)]
+            (doseq [[i {:keys [string]}] (map-indexed vector ancestors)]
+              (println (str (apply str (repeat i "  ")) "↳ " (resolve-refs g string))))
+            (print (format-tree (:block result) depth opts))))))))
 
-(defn smart-context-cli [graph-key uid]
-  (let [g (->key graph-key)
-        result (smart-context g uid)]
-    (if (:error result)
-      (println "❌" (:error result))
-      (do (println (str "🎯 Root: " (:root-uid result) " → target: " (:target-uid result)))
-          (print (format-tree (:tree result) 0 {:graph-key g}))))))
+(defn smart-context-cli [graph-key & args]
+  (let [[opts [uid]] (parse-flags args)
+        g (->key graph-key)
+        opts (assoc opts :graph-key g)]
+    (if-not uid
+      (println "Usage: bb smart-context <graph> [--clean] <uid>")
+      (let [result (smart-context g uid)]
+        (if (:error result)
+          (println "❌" (:error result))
+          (do (println (str "🎯 Root: " (:root-uid result) " → target: " (:target-uid result)))
+              (print (format-tree (:tree result) 0 opts))))))))
 
 (defn query-cli [graph-key query-str]
   (let [g (->key graph-key)
@@ -329,17 +339,19 @@
                   block)))]
       (->> roots (sort-by :time) (mapv attach)))))
 
-(defn- print-block-tree [roots indent opts]
-  (doseq [b roots]
-    (let [prefix (apply str (repeat indent "  "))
-          time-str (when (zero? indent) (str (fmt-hm (:time b)) "  "))
-          text (truncate (:string b) 80)
-          uid-str (when (:uid opts) (str " [" (:uid b) "]"))
-          cnt (count (or (:children b) []))
-          cnt-str (when (and (:count opts) (pos? cnt)) (str " [+" cnt "]"))]
-      (println (str prefix (or time-str "") text (or uid-str "") (or cnt-str ""))))
-    (when-let [children (:children b)]
-      (print-block-tree children (inc indent) opts))))
+(defn- print-block-tree
+  ([roots indent] (print-block-tree roots indent {:uid true :count true}))
+  ([roots indent opts]
+   (doseq [b roots]
+     (let [prefix (apply str (repeat indent "  "))
+           time-str (when (zero? indent) (str (fmt-hm (:time b)) "  "))
+           text (truncate (:string b) 80)
+           uid-str (when (:uid opts) (str " [" (:uid b) "]"))
+           cnt (count (or (:children b) []))
+           cnt-str (when (and (:count opts) (pos? cnt)) (str " [+" cnt "]"))]
+       (println (str prefix (or time-str "") text (or uid-str "") (or cnt-str ""))))
+     (when-let [children (:children b)]
+       (print-block-tree children (inc indent) opts)))))
 
 (defn today-cli [graph-key & args]
   (let [[opts _] (parse-flags args)
