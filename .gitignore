@@ -4,3 +4,4 @@ tmp/
 .nrepl-port
 .cpcache/
 dist/
+scripts/cron-backup.sh
