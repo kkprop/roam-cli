@@ -224,7 +224,7 @@
         opts (assoc opts :graph-key g)]
     (if-not id
       (println "Usage: bb read <graph> [--uid] [--count] <page-or-uid>")
-      (let [block (pull-block g id)]
+      (let [block (pull-block g id :deep true)]
         (if (and block (not (:error block)))
           (print (format-tree block 0 opts))
           (let [page (pull-page g id)]
